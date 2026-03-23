@@ -58,6 +58,58 @@ def _extract_header_metadata(text: str) -> dict:
     return metadata
 
 
+def _split_long_text(text: str, max_chars: int, min_chars: int) -> list[str]:
+    """Split a long text into segments of at most max_chars.
+
+    Tries paragraph boundaries first, then sentence boundaries, then
+    word boundaries as a last resort. Lecture transcripts often lack
+    punctuation and paragraph breaks, so the word-boundary fallback
+    is essential.
+    """
+    if len(text) <= max_chars:
+        return [text] if len(text) >= min_chars else []
+
+    segments = []
+    # First try paragraph splits
+    paragraphs = text.split('\n\n')
+
+    for para in paragraphs:
+        # If a single paragraph exceeds max_chars, split it further
+        if len(para) > max_chars:
+            subsegments = _split_at_word_boundaries(para, max_chars)
+            segments.extend(s for s in subsegments if len(s) >= min_chars)
+        else:
+            # Try to merge small paragraphs
+            if segments and len(segments[-1]) + len(para) + 2 <= max_chars:
+                segments[-1] = segments[-1] + "\n\n" + para
+            elif len(para) >= min_chars:
+                segments.append(para)
+
+    return segments
+
+
+def _split_at_word_boundaries(text: str, max_chars: int) -> list[str]:
+    """Split text at word boundaries to stay under max_chars per segment.
+
+    For unpunctuated lecture transcripts where sentence splitting fails.
+    """
+    words = text.split()
+    segments = []
+    current = ""
+
+    for word in words:
+        if current and len(current) + 1 + len(word) > max_chars:
+            segments.append(current)
+            current = word
+        else:
+            current = current + " " + word if current else word
+
+    if current:
+        segments.append(current)
+
+    return segments
+
+
 def _split_into_chunks(
     text: str,
     source_id: str,
@@ -106,35 +158,13 @@ def _split_into_chunks(
         if len(chunk_text) < min_chunk_chars:
             continue
 
-        # Split long chunks at paragraph boundaries
+        # Split long chunks at paragraph or sentence boundaries
         if len(chunk_text) > max_chunk_chars:
-            paragraphs = chunk_text.split('\n\n')
-            current_text = ""
-            sub_index = 0
-
-            for para in paragraphs:
-                if current_text and len(current_text) + len(para) > max_chunk_chars:
-                    if len(current_text.strip()) >= min_chunk_chars:
-                        chunks.append(Chunk(
-                            source_id=source_id,
-                            text=current_text.strip(),
-                            language="en",
-                            youtube_timestamp=timestamp,
-                            youtube_url=youtube_url,
-                            paragraph_index=len(chunks),
-                            lecturer=lecturer,
-                            lecture_number=current_lecture_num,
-                            chunk_method="timestamp",
-                        ))
-                    current_text = para + "\n\n"
-                    sub_index += 1
-                else:
-                    current_text += para + "\n\n"
-
-            if current_text.strip() and len(current_text.strip()) >= min_chunk_chars:
+            segments = _split_long_text(chunk_text, max_chunk_chars, min_chunk_chars)
+            for seg in segments:
                 chunks.append(Chunk(
                     source_id=source_id,
-                    text=current_text.strip(),
+                    text=seg,
                     language="en",
                     youtube_timestamp=timestamp,
                     youtube_url=youtube_url,
