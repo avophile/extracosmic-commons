@@ -3,34 +3,40 @@
 Provides multilingual text embeddings using BAAI/bge-m3 (1024-dim, 100+ languages).
 The model is loaded lazily on first use to avoid slow import-time initialization.
 
-BGE-M3 was chosen over bge-base-en-v1.5 (used in the scholarly workbench) because
-this platform requires multilingual support: German Hegel texts, French philosophy
-(Malabou, Derrida, Foucault), and English translations must all inhabit the same
-vector space.
+On macOS, FAISS and PyTorch both link libomp, causing segfaults when both are
+loaded in the same process. The EmbeddingPipeline detects this and automatically
+routes embedding calls through a subprocess that only loads PyTorch. On Linux/cloud
+machines, everything runs in-process for maximum speed.
 """
 
 from __future__ import annotations
 
+import platform
 from typing import Callable
 
 import numpy as np
 
+# Detect macOS libomp conflict at module level
+_MACOS = platform.system() == "Darwin"
+
 
 class EmbeddingPipeline:
-    """Lazy-loaded multilingual embedding pipeline.
+    """Multilingual embedding pipeline with automatic macOS subprocess isolation.
 
-    The SentenceTransformer model is only loaded when the first embedding
-    is requested, not at construction time. This keeps imports fast and
-    allows tests to mock the model.
+    On macOS: embeddings are computed in a subprocess to avoid the FAISS+PyTorch
+    libomp segfault. Slower but reliable.
+
+    On Linux/cloud: embeddings are computed in-process with GPU acceleration.
     """
 
     def __init__(self, model_name: str = "BAAI/bge-m3"):
         self.model_name = model_name
         self._model = None
+        self._dimension: int | None = None
 
     @property
     def model(self):
-        """Lazy-load the SentenceTransformer model."""
+        """Lazy-load the SentenceTransformer model (in-process, non-macOS only)."""
         if self._model is None:
             from sentence_transformers import SentenceTransformer
 
@@ -40,16 +46,32 @@ class EmbeddingPipeline:
     @property
     def dimension(self) -> int:
         """Embedding dimension. BGE-M3 produces 1024-dim vectors."""
-        return self.model.get_sentence_embedding_dimension()
+        if self._dimension is not None:
+            return self._dimension
+        if _MACOS:
+            # Avoid loading the model just to get the dimension
+            if "bge-m3" in self.model_name:
+                self._dimension = 1024
+            elif "MiniLM-L6" in self.model_name:
+                self._dimension = 384
+            else:
+                self._dimension = self.model.get_sentence_embedding_dimension()
+        else:
+            self._dimension = self.model.get_sentence_embedding_dimension()
+        return self._dimension
 
     def embed(self, text: str) -> np.ndarray:
         """Embed a single text string.
 
-        Returns a 1024-dim float32 vector, L2-normalized for cosine
-        similarity via inner product in FAISS.
+        Returns a float32 vector, L2-normalized for cosine similarity.
         """
         if not text or not text.strip():
             return np.zeros(self.dimension, dtype=np.float32)
+
+        if _MACOS:
+            from .embed_subprocess import embed_texts_subprocess
+
+            return embed_texts_subprocess([text], model_name=self.model_name)[0]
 
         embedding = self.model.encode(
             text,
@@ -67,12 +89,7 @@ class EmbeddingPipeline:
     ) -> np.ndarray:
         """Embed a batch of texts.
 
-        Returns an (N, 1024) float32 array, L2-normalized.
-
-        Args:
-            texts: List of text strings to embed.
-            batch_size: Number of texts per encoding batch.
-            progress_callback: Optional fn(completed, total) called after each batch.
+        Returns an (N, dimension) float32 array, L2-normalized.
         """
         if not texts:
             return np.zeros((0, self.dimension), dtype=np.float32)
@@ -80,8 +97,14 @@ class EmbeddingPipeline:
         # Replace empty strings with a space to avoid model issues
         cleaned = [t if t and t.strip() else " " for t in texts]
 
-        # Auto-reduce batch size for long texts to prevent OOM.
-        # BGE-M3 with 8K-char texts at batch_size=32 requires ~12GB RAM.
+        if _MACOS:
+            from .embed_subprocess import embed_texts_subprocess
+
+            return embed_texts_subprocess(
+                cleaned, model_name=self.model_name, batch_size=batch_size
+            )
+
+        # Auto-reduce batch size for long texts to prevent OOM
         avg_len = sum(len(t) for t in cleaned) / len(cleaned)
         if avg_len > 4000:
             batch_size = min(batch_size, 4)
@@ -97,7 +120,6 @@ class EmbeddingPipeline:
                 normalize_embeddings=True,
             )
         else:
-            # Process in batches with progress reporting
             all_embeddings = []
             for i in range(0, len(cleaned), batch_size):
                 batch = cleaned[i : i + batch_size]

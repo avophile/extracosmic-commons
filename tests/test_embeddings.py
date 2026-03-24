@@ -4,6 +4,8 @@ Uses a small model fixture for fast CI. The full BGE-M3 model test is
 marked slow and only runs when --runslow is passed.
 """
 
+import platform
+
 import numpy as np
 import pytest
 
@@ -75,8 +77,12 @@ class TestEmbeddingPipeline:
         batch = embedder.embed_batch([text])
         assert np.allclose(single, batch[0], atol=1e-5)
 
+    @pytest.mark.skipif(
+        platform.system() == "Darwin",
+        reason="Progress callback not supported in macOS subprocess mode",
+    )
     def test_embed_batch_with_progress(self, embedder):
-        """Progress callback is called."""
+        """Progress callback is called (non-macOS only)."""
         calls = []
         texts = ["A", "B", "C", "D", "E"]
         embedder.embed_batch(

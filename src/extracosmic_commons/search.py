@@ -65,7 +65,7 @@ class SearchEngine:
         Returns:
             List of SearchResult, sorted by descending score.
         """
-        # Embed query
+        # Embed query (automatically uses subprocess on macOS)
         query_vec = self.embedder.embed(query)
 
         # Over-fetch from FAISS to account for post-filtering
