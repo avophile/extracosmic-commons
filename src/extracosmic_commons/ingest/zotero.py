@@ -78,17 +78,38 @@ def parse_rdf(rdf_path: Path, collection_root: Path) -> list[ZoteroItem]:
     root = tree.getroot()
     items = []
 
-    # Find all items (Description elements with z:itemType)
+    # Zotero RDF uses different XML elements for different item types:
+    #   rdf:Description with z:itemType — generic items
+    #   bib:Book, bib:Article, bib:BookSection — typed items
+    # We scan all of them.
+    type_map = {
+        f"{{{NS['bib']}}}Book": "book",
+        f"{{{NS['bib']}}}Article": "journalArticle",
+        f"{{{NS['bib']}}}BookSection": "bookSection",
+        f"{{{NS['bib']}}}Memo": "note",
+        f"{{{NS['bib']}}}Thesis": "thesis",
+        f"{{{NS['bib']}}}Report": "report",
+    }
+
+    all_elements = []
+    # rdf:Description elements with z:itemType
     for desc in root.findall(".//rdf:Description", NS):
         item_type_el = desc.find("z:itemType", NS)
-        if item_type_el is None:
-            continue
+        if item_type_el is not None:
+            it = item_type_el.text or "unknown"
+            if it != "attachment":
+                all_elements.append((desc, it))
+    # Typed bib: elements
+    for tag, it in type_map.items():
+        for elem in root.findall(f".//{tag}"):
+            # Check if it has z:itemType too (avoid double-counting)
+            it_el = elem.find("z:itemType", NS)
+            if it_el is not None:
+                it = it_el.text or it
+            if it != "attachment":
+                all_elements.append((elem, it))
 
-        item_type = item_type_el.text or "unknown"
-
-        # Skip attachment entries — they're the PDF file records, not items
-        if item_type == "attachment":
-            continue
+    for desc, item_type in all_elements:
 
         # Title
         title_el = desc.find("dc:title", NS)
