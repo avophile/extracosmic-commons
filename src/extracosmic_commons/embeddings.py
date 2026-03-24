@@ -80,6 +80,14 @@ class EmbeddingPipeline:
         # Replace empty strings with a space to avoid model issues
         cleaned = [t if t and t.strip() else " " for t in texts]
 
+        # Auto-reduce batch size for long texts to prevent OOM.
+        # BGE-M3 with 8K-char texts at batch_size=32 requires ~12GB RAM.
+        avg_len = sum(len(t) for t in cleaned) / len(cleaned)
+        if avg_len > 4000:
+            batch_size = min(batch_size, 4)
+        elif avg_len > 1000:
+            batch_size = min(batch_size, 8)
+
         if progress_callback is None:
             embeddings = self.model.encode(
                 cleaned,
