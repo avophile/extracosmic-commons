@@ -1,7 +1,12 @@
-"""Semantic search engine for Extracosmic Commons.
+"""Hybrid search engine for Extracosmic Commons.
 
-Combines FAISS vector search with SQLite metadata filtering.
-Phase 0 is semantic-only; BM25 hybrid search is Phase 1.
+Combines FAISS semantic search with BM25 keyword matching using normalized
+score fusion. The merge formula (ported from scholarly workbench):
+
+    hybrid_score = (semantic / max_semantic) * semantic_weight
+                 + (bm25 / max_bm25) * keyword_weight
+
+BM25 is optional — if no BM25 index is provided, falls back to semantic-only.
 """
 
 from __future__ import annotations
@@ -9,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .bm25 import BM25Index
 from .database import Database
 from .embeddings import EmbeddingPipeline
 from .index import FAISSIndex
@@ -26,11 +32,10 @@ class SearchResult:
 
 
 class SearchEngine:
-    """Semantic search over the Extracosmic Commons corpus.
+    """Hybrid semantic + keyword search over the Extracosmic Commons corpus.
 
-    Embeds the query with BGE-M3, searches FAISS for nearest neighbors,
-    then enriches results with metadata from SQLite. Supports post-retrieval
-    filtering and automatic bilingual pair resolution.
+    When a BM25 index is provided, search results combine semantic similarity
+    (FAISS) with exact term matching (BM25) using configurable weights.
     """
 
     def __init__(
@@ -38,10 +43,53 @@ class SearchEngine:
         db: Database,
         embedder: EmbeddingPipeline,
         index: FAISSIndex,
+        bm25: BM25Index | None = None,
+        semantic_weight: float = 0.7,
     ):
         self.db = db
         self.embedder = embedder
         self.index = index
+        self.bm25 = bm25
+        self.semantic_weight = semantic_weight
+        self.keyword_weight = 1.0 - semantic_weight
+
+    def _hybrid_scores(
+        self, query: str, query_vec, fetch_k: int
+    ) -> dict[str, float]:
+        """Compute hybrid scores by fusing FAISS and BM25 results.
+
+        Returns a dict of chunk_id → hybrid_score.
+        """
+        # FAISS semantic search
+        faiss_results = self.index.search(query_vec, top_k=fetch_k)
+        semantic_scores = {cid: score for cid, score in faiss_results}
+
+        if self.bm25 is None or self.bm25.size == 0:
+            return semantic_scores
+
+        # BM25 keyword search
+        bm25_results = self.bm25.search(query, top_k=fetch_k)
+        bm25_scores = {cid: score for cid, score in bm25_results}
+
+        # Union all candidate IDs
+        all_ids = set(semantic_scores.keys()) | set(bm25_scores.keys())
+
+        # Normalize each distribution independently
+        max_semantic = max(semantic_scores.values()) if semantic_scores else 1.0
+        max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
+
+        if max_semantic == 0:
+            max_semantic = 1.0
+        if max_bm25 == 0:
+            max_bm25 = 1.0
+
+        hybrid = {}
+        for cid in all_ids:
+            sem = semantic_scores.get(cid, 0.0) / max_semantic
+            kw = bm25_scores.get(cid, 0.0) / max_bm25
+            hybrid[cid] = sem * self.semantic_weight + kw * self.keyword_weight
+
+        return hybrid
 
     def search(
         self,
@@ -65,28 +113,30 @@ class SearchEngine:
         Returns:
             List of SearchResult, sorted by descending score.
         """
-        # Embed query (automatically uses subprocess on macOS)
+        # Embed query
         query_vec = self.embedder.embed(query)
 
-        # Over-fetch from FAISS to account for post-filtering
-        fetch_k = top_k * 3 if filters else top_k
-        faiss_results = self.index.search(query_vec, top_k=fetch_k)
+        # Over-fetch to account for post-filtering
+        fetch_k = max(top_k * 3, 100) if filters else max(top_k, 100)
 
-        if not faiss_results:
+        # Get hybrid scores (or semantic-only if no BM25)
+        scores = self._hybrid_scores(query, query_vec, fetch_k)
+
+        if not scores:
             return []
 
-        # Fetch chunks from database
-        chunk_ids = [cid for cid, _ in faiss_results]
-        scores = {cid: score for cid, score in faiss_results}
+        # Fetch chunks from database — sorted by score descending
+        sorted_ids = sorted(scores.keys(), key=lambda cid: scores[cid], reverse=True)
+        # Only fetch what we might need
+        chunk_ids = sorted_ids[: fetch_k]
         chunks = self.db.get_chunks_by_ids(chunk_ids)
 
         # Build source cache
         source_cache: dict[str, Source] = {}
 
-        # Apply filters
+        # Apply filters and build results
         results = []
         for chunk in chunks:
-            # Post-retrieval filters
             if "lecturer" in filters and chunk.lecturer != filters["lecturer"]:
                 continue
             if "language" in filters and chunk.language != filters["language"]:
@@ -109,7 +159,7 @@ class SearchEngine:
                 if not match:
                     continue
 
-            # Fetch source if not cached
+            # Fetch source
             if chunk.source_id not in source_cache:
                 src = self.db.get_source(chunk.source_id)
                 if src:
@@ -132,6 +182,5 @@ class SearchEngine:
                 paired_chunk=paired,
             ))
 
-        # Sort by score and trim to top_k
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
