@@ -19,9 +19,11 @@ from ..embeddings import EmbeddingPipeline
 from ..index import FAISSIndex
 from ..models import Chunk, Source, SourceType
 
-# Matches: **[00:29:16](https://...)** or **[00:29:16](https://...)**
+# Matches both formats:
+#   **[00:29:16](https://...)** — Thompson/Houlgate (with URL)
+#   **[00:29:16]**             — Radnik (no URL)
 TIMESTAMP_PATTERN = re.compile(
-    r'\*\*\[(\d{1,2}:\d{2}:\d{2})\]\((https?://[^)]+)\)\*\*\s*'
+    r'\*\*\[(\d{1,2}:\d{2}:\d{2})\](?:\((https?://[^)]+)\))?\*\*\s*'
 )
 
 # Matches lecture/session headers like: ## Session 1a — Title  or  ## Lecture 1 — Title
