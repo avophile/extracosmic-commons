@@ -118,6 +118,22 @@
         }
         .cross-ref-text { font-size: 0.9rem; color: var(--text-muted); }
 
+        /* Side-by-side bilingual display */
+        .bilingual-pair {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+            margin-top: 0.75rem;
+        }
+        .bilingual-side {
+            background: rgba(15, 52, 96, 0.3); border-radius: 6px;
+            padding: 0.75rem 1rem; font-size: 0.9rem; line-height: 1.7;
+        }
+        .bilingual-side .lang-label {
+            font-size: 0.75rem; color: var(--accent); font-weight: bold;
+            text-transform: uppercase; margin-bottom: 0.4rem;
+        }
+        .bilingual-side.de { border-left: 3px solid var(--accent2); }
+        .bilingual-side.en { border-left: 3px solid var(--link); }
+
         .stats { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
         .stats span { margin-right: 1.5rem; }
         .result-count { color: var(--text-muted); margin-top: 1rem; font-style: italic; }
@@ -177,11 +193,9 @@
                     {% if r.chunk.youtube_url and r.chunk.youtube_url.startswith('http') %}
                     <a href="{{ r.chunk.youtube_url }}" target="_blank" title="Watch on YouTube">▶ YouTube [{{ r.chunk.youtube_timestamp }}]</a>
                     {% elif r.chunk.youtube_url and not r.chunk.youtube_url.startswith('http') %}
-                    <a href="#" onclick="openLocalFile('{{ r.chunk.youtube_url }}'); return false;" title="Open video at timestamp">▶ Video [{{ r.chunk.youtube_timestamp }}]</a>
-                    {% elif r.chunk.lecturer and r.chunk.youtube_timestamp %}
-                    <a href="#" onclick="openLocalFile('{{ r.source.source_path }}'); return false;" title="Open transcript file">▶ Lecture [{{ r.chunk.youtube_timestamp }}]</a>
+                    <a href="#" onclick="openVideo('{{ r.chunk.youtube_url }}', '{{ r.chunk.youtube_timestamp }}'); return false;" title="Open video at {{ r.chunk.youtube_timestamp }}">▶ Video [{{ r.chunk.youtube_timestamp }}]</a>
                     {% elif r.source.source_path %}
-                    <a href="#" onclick="openPDF('{{ r.source.source_path }}', {{ r.chunk.pdf_page or 1 }}); return false;" title="Open source PDF">Open PDF</a>
+                    <a href="#" onclick="openPDF('{{ r.source.source_path }}', {{ r.chunk.pdf_page or 1 }}); return false;" title="Open PDF at page {{ r.chunk.pdf_page or 1 }}">Open PDF{% if r.chunk.pdf_page %} p.{{ r.chunk.pdf_page }}{% endif %}</a>
                     {% endif %}
                     <button onclick="expandContext('{{ r.chunk.id }}', {{ loop.index }})" id="expand-btn-{{ loop.index }}" title="Show more surrounding text">Expand context</button>
                     <button onclick="copyCitation({{ loop.index }})" title="Copy citation + excerpt to clipboard">Copy citation</button>
@@ -196,9 +210,26 @@
                 </div>
 
                 {% if r.paired_chunk %}
-                <div class="cross-ref">
-                    <div class="cross-ref-label">[{{ r.paired_chunk.language|upper }}] Bilingual pair</div>
-                    <div class="cross-ref-text">{{ r.paired_chunk.text[:300] }}{% if r.paired_chunk.text|length > 300 %}...{% endif %}</div>
+                <div class="bilingual-pair">
+                    {% if r.chunk.language == 'de' %}
+                    <div class="bilingual-side de">
+                        <div class="lang-label">DE — Original</div>
+                        {{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}
+                    </div>
+                    <div class="bilingual-side en">
+                        <div class="lang-label">EN — Translation</div>
+                        {{ r.paired_chunk.text[:500] }}{% if r.paired_chunk.text|length > 500 %}...{% endif %}
+                    </div>
+                    {% else %}
+                    <div class="bilingual-side de">
+                        <div class="lang-label">DE — Original</div>
+                        {{ r.paired_chunk.text[:500] }}{% if r.paired_chunk.text|length > 500 %}...{% endif %}
+                    </div>
+                    <div class="bilingual-side en">
+                        <div class="lang-label">EN — Translation</div>
+                        {{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}
+                    </div>
+                    {% endif %}
                 </div>
                 {% endif %}
 
@@ -232,15 +263,15 @@
         }
     }
 
-    async function openLocalFile(path) {
+    async function openVideo(path, timestamp) {
         try {
-            const resp = await fetch('/api/open-pdf?path=' + encodeURIComponent(path) + '&page=1');
+            const resp = await fetch('/api/open-video?path=' + encodeURIComponent(path) + '&timestamp=' + encodeURIComponent(timestamp));
             const data = await resp.json();
             if (data.error) {
-                alert('Could not open file: ' + data.error);
+                alert('Could not open video: ' + data.error);
             }
         } catch(e) {
-            alert('Error opening file: ' + e);
+            alert('Error opening video: ' + e);
         }
     }
 

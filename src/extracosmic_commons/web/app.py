@@ -264,7 +264,7 @@ async def api_search(
 
 @app.get("/api/open-pdf")
 async def api_open_pdf(path: str = Query(...), page: int = Query(1)):
-    """Open a PDF or file in the system's default viewer."""
+    """Open a PDF at a specific page, or a video file."""
     import subprocess
 
     # Map RunPod paths to local paths
@@ -273,9 +273,64 @@ async def api_open_pdf(path: str = Query(...), page: int = Query(1)):
     if not filepath.exists():
         return {"error": f"File not found: {local_path} (original: {path})"}
 
-    # macOS: use 'open' command
-    subprocess.Popen(["open", str(filepath)])
+    suffix = filepath.suffix.lower()
+
+    if suffix == ".pdf" and page > 1:
+        # Open PDF in Preview at the specified page via AppleScript
+        script = f'''
+            tell application "Preview"
+                open POSIX file "{filepath}"
+                activate
+            end tell
+            delay 1
+            tell application "Preview"
+                tell document 1
+                    go to page {page}
+                end tell
+            end tell
+        '''
+        subprocess.Popen(["osascript", "-e", script])
+    elif suffix == ".mp4":
+        # Open video in QuickTime
+        subprocess.Popen(["open", "-a", "QuickTime Player", str(filepath)])
+    else:
+        subprocess.Popen(["open", str(filepath)])
+
     return {"ok": True, "path": str(filepath), "page": page}
+
+
+@app.get("/api/open-video")
+async def api_open_video(path: str = Query(...), timestamp: str = Query("00:00:00")):
+    """Open a video file and seek to the given timestamp."""
+    import subprocess
+
+    local_path = _map_path(path)
+    filepath = Path(local_path)
+    if not filepath.exists():
+        return {"error": f"File not found: {local_path} (original: {path})"}
+
+    # Parse timestamp HH:MM:SS to seconds
+    parts = timestamp.split(":")
+    seconds = 0
+    if len(parts) == 3:
+        seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    elif len(parts) == 2:
+        seconds = int(parts[0]) * 60 + int(parts[1])
+
+    # Open in QuickTime and seek via AppleScript
+    script = f'''
+        tell application "QuickTime Player"
+            open POSIX file "{filepath}"
+            activate
+            delay 1
+            tell document 1
+                set current time to {seconds}
+                play
+            end tell
+        end tell
+    '''
+    subprocess.Popen(["osascript", "-e", script])
+    return {"ok": True, "path": str(filepath), "timestamp": timestamp, "seconds": seconds}
 
 
 @app.get("/api/stats")
