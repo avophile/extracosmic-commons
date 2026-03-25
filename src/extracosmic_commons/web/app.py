@@ -6,6 +6,7 @@ Starts with `ec serve` and runs at localhost:8000.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -15,7 +16,6 @@ from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="Extracosmic Commons", version="0.2.0")
 
-# Templates directory
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
@@ -42,6 +42,14 @@ def _get_components():
     return db, engine
 
 
+def _format_citation(source) -> str:
+    """Generate a Chicago citation for a source."""
+    from ..citations import CitationFormatter
+
+    formatter = CitationFormatter()
+    return formatter.chicago(source)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Search form and corpus stats."""
@@ -52,6 +60,10 @@ async def home(request: Request):
         "stats": stats,
         "results": None,
         "query": "",
+        "compare": False,
+        "bilingual": False,
+        "result_data_json": "[]",
+        "citations": [],
     })
 
 
@@ -68,11 +80,14 @@ async def search_view(
 ):
     """Search results page."""
     if not q.strip():
-        return templates.TemplateResponse("search.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "search.html", {
             "stats": None,
             "results": None,
             "query": "",
+            "compare": False,
+            "bilingual": False,
+            "result_data_json": "[]",
+            "citations": [],
         })
 
     db, engine = _get_components()
@@ -89,6 +104,21 @@ async def search_view(
         q, top_k=k, bilingual=bilingual, compare=compare, **filters
     )
 
+    # Build citation and data for each result (for JS clipboard/context)
+    citations = []
+    result_data = []
+    for r in results:
+        cite = _format_citation(r.source)
+        citations.append(cite)
+        result_data.append({
+            "chunk_id": r.chunk.id,
+            "text": r.chunk.text,
+            "citation": cite,
+            "pdf_page": r.chunk.pdf_page,
+            "source_path": r.source.source_path,
+            "source_title": r.source.title,
+        })
+
     db.close()
 
     return templates.TemplateResponse(request, "search.html", {
@@ -97,7 +127,49 @@ async def search_view(
         "query": q,
         "compare": compare,
         "bilingual": bilingual,
+        "result_data_json": json.dumps(result_data),
+        "citations": citations,
     })
+
+
+@app.get("/api/context/{chunk_id}")
+async def api_context(chunk_id: str):
+    """Get surrounding context for a chunk (before + current + after)."""
+    db, _ = _get_components()
+
+    # Find the chunk
+    chunks = db.get_chunks_by_ids([chunk_id])
+    if not chunks:
+        db.close()
+        return {"error": "Chunk not found"}
+
+    chunk = chunks[0]
+
+    # Get all chunks from the same source, sorted by position
+    source_chunks = db.get_chunks_by_source(chunk.source_id)
+    source_chunks.sort(key=lambda c: (c.pdf_page or 0, c.paragraph_index or 0))
+
+    # Find this chunk's position
+    idx = None
+    for i, c in enumerate(source_chunks):
+        if c.id == chunk_id:
+            idx = i
+            break
+
+    if idx is None:
+        db.close()
+        return {"before": [], "current": chunk.text, "after": []}
+
+    # Get 3 chunks before and 3 after
+    before = [c.text for c in source_chunks[max(0, idx - 3):idx]]
+    after = [c.text for c in source_chunks[idx + 1:idx + 4]]
+
+    db.close()
+    return {
+        "before": before,
+        "current": chunk.text,
+        "after": after,
+    }
 
 
 @app.get("/api/search")
@@ -110,17 +182,19 @@ async def api_search(
     """JSON API for search."""
     db, engine = _get_components()
     results = engine.search(q, top_k=k, bilingual=bilingual, compare=compare)
-    db.close()
 
-    return [
-        {
+    output = []
+    for r in results:
+        output.append({
             "score": r.score,
+            "chunk_id": r.chunk.id,
             "text": r.chunk.text[:500],
             "source_title": r.source.title,
             "author": r.source.author,
             "structural_ref": r.chunk.structural_ref,
             "pdf_page": r.chunk.pdf_page,
             "lecturer": r.chunk.lecturer,
+            "citation": _format_citation(r.source),
             "cross_translations": [
                 {
                     "edition": xref.edition_label,
@@ -129,9 +203,10 @@ async def api_search(
                 }
                 for xref in (r.cross_translations or [])
             ] if r.cross_translations else None,
-        }
-        for r in results
-    ]
+        })
+
+    db.close()
+    return output
 
 
 @app.get("/api/stats")

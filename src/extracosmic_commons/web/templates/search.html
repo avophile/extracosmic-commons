@@ -9,12 +9,14 @@
             --bg: #1a1a2e;
             --bg-card: #16213e;
             --bg-input: #0f3460;
+            --bg-hover: #1a2a4e;
             --text: #e0e0e0;
             --text-muted: #8a8a9a;
             --accent: #e94560;
             --accent2: #533483;
             --border: #2a2a4a;
             --link: #7ec8e3;
+            --success: #4ade80;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -26,122 +28,99 @@
             margin: 0 auto;
             padding: 2rem 1rem;
         }
-        h1 {
-            font-size: 1.8rem;
-            margin-bottom: 0.5rem;
-            color: var(--accent);
+        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: var(--accent); }
+        .subtitle { color: var(--text-muted); margin-bottom: 2rem; font-style: italic; }
+
+        /* Search form */
+        .search-form { margin-bottom: 1.5rem; }
+        .search-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+        .search-row input[type="text"] {
+            flex: 1; padding: 0.75rem 1rem;
+            background: var(--bg-input); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            font-size: 1rem; font-family: inherit;
         }
-        .subtitle {
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            font-style: italic;
+        .search-row button {
+            padding: 0.75rem 1.5rem; background: var(--accent); color: white;
+            border: none; border-radius: 6px; cursor: pointer; font-size: 1rem;
         }
-        .search-form {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 2rem;
-        }
-        .search-form input[type="text"] {
-            flex: 1;
-            padding: 0.75rem 1rem;
-            background: var(--bg-input);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 1rem;
-            font-family: inherit;
-        }
-        .search-form button {
-            padding: 0.75rem 1.5rem;
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 1rem;
-        }
-        .search-form button:hover { opacity: 0.9; }
-        .options {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
-        }
+        .search-row button:hover { opacity: 0.9; }
+        .options { display: flex; gap: 1.5rem; flex-wrap: wrap; }
         .options label {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            gap: 0.3rem;
+            color: var(--text-muted); font-size: 0.9rem;
+            display: flex; align-items: center; gap: 0.3rem; cursor: pointer;
         }
+
+        /* Results */
         .result {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 1.25rem;
-            margin-bottom: 1rem;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem;
         }
         .result-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
+            display: flex; justify-content: space-between; align-items: baseline;
             margin-bottom: 0.5rem;
         }
-        .result-title {
-            font-weight: bold;
-            color: var(--link);
-            font-size: 1.05rem;
-        }
-        .result-score {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-        }
-        .result-meta {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            margin-bottom: 0.75rem;
-        }
+        .result-title { font-weight: bold; color: var(--link); font-size: 1.05rem; }
+        .result-score { color: var(--text-muted); font-size: 0.85rem; }
+        .result-meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
         .result-meta span { margin-right: 1rem; }
         .result-text {
-            font-size: 0.95rem;
-            line-height: 1.7;
-            border-left: 3px solid var(--accent2);
-            padding-left: 1rem;
-            margin: 0.75rem 0;
+            font-size: 0.95rem; line-height: 1.7;
+            border-left: 3px solid var(--accent2); padding-left: 1rem; margin: 0.75rem 0;
         }
-        .result-cite {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            font-style: italic;
-            margin-top: 0.5rem;
+        .result-text.expanded { max-height: none; }
+
+        /* Action buttons */
+        .result-actions {
+            display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap;
         }
+        .result-actions button, .result-actions a {
+            padding: 0.4rem 0.8rem; font-size: 0.8rem;
+            background: var(--bg-input); color: var(--text-muted);
+            border: 1px solid var(--border); border-radius: 4px;
+            cursor: pointer; text-decoration: none; font-family: inherit;
+            transition: all 0.15s;
+        }
+        .result-actions button:hover, .result-actions a:hover {
+            background: var(--bg-hover); color: var(--text); border-color: var(--accent2);
+        }
+        .result-actions .copied {
+            background: var(--accent2); color: white; border-color: var(--accent2);
+        }
+
+        /* Expanded context */
+        .expanded-context {
+            display: none; margin-top: 0.75rem; padding: 1rem;
+            background: rgba(15, 52, 96, 0.3); border-radius: 6px;
+            font-size: 0.9rem; line-height: 1.7; color: var(--text-muted);
+        }
+        .expanded-context.visible { display: block; }
+        .expanded-context .highlight {
+            color: var(--text); background: rgba(233, 69, 96, 0.15);
+            padding: 0.1rem 0.2rem; border-radius: 2px;
+        }
+
+        /* Citation display */
+        .citation-box {
+            display: none; margin-top: 0.5rem; padding: 0.75rem 1rem;
+            background: rgba(83, 52, 131, 0.15); border-radius: 6px;
+            font-size: 0.85rem; font-style: italic; color: var(--text-muted);
+        }
+        .citation-box.visible { display: block; }
+
+        /* Cross-refs */
         .cross-ref {
-            background: rgba(83, 52, 131, 0.2);
-            border-radius: 6px;
-            padding: 0.75rem 1rem;
-            margin-top: 0.75rem;
+            background: rgba(83, 52, 131, 0.2); border-radius: 6px;
+            padding: 0.75rem 1rem; margin-top: 0.75rem;
         }
         .cross-ref-label {
-            font-size: 0.8rem;
-            color: var(--accent);
-            font-weight: bold;
-            margin-bottom: 0.3rem;
+            font-size: 0.8rem; color: var(--accent); font-weight: bold; margin-bottom: 0.3rem;
         }
-        .cross-ref-text {
-            font-size: 0.9rem;
-            color: var(--text-muted);
-        }
-        .stats {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            margin-bottom: 2rem;
-        }
+        .cross-ref-text { font-size: 0.9rem; color: var(--text-muted); }
+
+        .stats { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
         .stats span { margin-right: 1.5rem; }
-        .result-count {
-            color: var(--text-muted);
-            margin-top: 1rem;
-            font-style: italic;
-        }
+        .result-count { color: var(--text-muted); margin-top: 1rem; font-style: italic; }
         a { color: var(--link); text-decoration: none; }
         a:hover { text-decoration: underline; }
     </style>
@@ -161,21 +140,22 @@
     {% endif %}
 
     <form class="search-form" action="/search" method="get">
-        <input type="text" name="q" value="{{ query }}" placeholder="Search the corpus..." autofocus>
-        <button type="submit">Search</button>
+        <div class="search-row">
+            <input type="text" name="q" value="{{ query }}" placeholder="Search the corpus..." autofocus>
+            <button type="submit">Search</button>
+        </div>
+        <div class="options">
+            <label><input type="checkbox" name="compare" value="true" {% if compare %}checked{% endif %}> Compare editions</label>
+            <label><input type="checkbox" name="bilingual" value="true" {% if bilingual %}checked{% endif %}> Bilingual pairs</label>
+        </div>
     </form>
-
-    <div class="options">
-        <label><input type="checkbox" name="compare" value="true" {% if compare %}checked{% endif %}> Compare editions</label>
-        <label><input type="checkbox" name="bilingual" value="true" {% if bilingual %}checked{% endif %}> Bilingual pairs</label>
-    </div>
 
     {% if results is not none %}
         {% if results|length == 0 %}
             <p class="result-count">No results found for "{{ query }}"</p>
         {% else %}
             {% for r in results %}
-            <div class="result">
+            <div class="result" id="result-{{ loop.index }}">
                 <div class="result-header">
                     <span class="result-title">{{ r.source.title }}</span>
                     <span class="result-score">{{ "%.4f"|format(r.score) }}</span>
@@ -184,13 +164,30 @@
                     {% if r.source.author %}<span>{{ r.source.author|join(', ') }}</span>{% endif %}
                     {% if r.chunk.pdf_page %}<span>Page {{ r.chunk.pdf_page }}</span>{% endif %}
                     {% if r.chunk.lecturer %}<span>{{ r.chunk.lecturer }}</span>{% endif %}
+                    {% if r.chunk.youtube_url %}<span><a href="{{ r.chunk.youtube_url }}" target="_blank">[{{ r.chunk.youtube_timestamp }}]</a></span>{% endif %}
                     {% if r.chunk.structural_ref %}
                         {% for k, v in r.chunk.structural_ref.items() if k not in ['canonical_section', 'canonical_para', 'alignment_confidence', 'para_group_index'] %}
                         <span>{{ k }}={{ v }}</span>
                         {% endfor %}
                     {% endif %}
                 </div>
-                <div class="result-text">{{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}</div>
+                <div class="result-text" id="text-{{ loop.index }}">{{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}</div>
+
+                <div class="result-actions">
+                    {% if r.source.source_path %}
+                    <a href="#" onclick="openPDF('{{ r.source.source_path }}', {{ r.chunk.pdf_page or 1 }}); return false;" title="Open source PDF">Open PDF</a>
+                    {% endif %}
+                    <button onclick="expandContext('{{ r.chunk.id }}', {{ loop.index }})" title="Show more surrounding text">Expand context</button>
+                    <button onclick="copyCitation({{ loop.index }})" title="Copy citation + excerpt to clipboard">Copy citation</button>
+                </div>
+
+                <div class="expanded-context" id="context-{{ loop.index }}">
+                    Loading...
+                </div>
+
+                <div class="citation-box" id="cite-{{ loop.index }}">
+                    {{ citations[loop.index0] if citations else '' }}
+                </div>
 
                 {% if r.paired_chunk %}
                 <div class="cross-ref">
@@ -212,5 +209,62 @@
             <p class="result-count">{{ results|length }} results for "{{ query }}"</p>
         {% endif %}
     {% endif %}
+
+    <script>
+    // Store full data for each result (passed from server)
+    const resultData = {{ result_data_json|safe if result_data_json else '[]' }};
+
+    function openPDF(path, page) {
+        // Open PDF in default viewer at the specified page
+        // For local files, we use a file:// URL
+        // macOS: open command handles page navigation for Preview.app
+        window.open('file://' + encodeURI(path), '_blank');
+    }
+
+    async function expandContext(chunkId, idx) {
+        const el = document.getElementById('context-' + idx);
+        if (el.classList.contains('visible')) {
+            el.classList.remove('visible');
+            return;
+        }
+        el.textContent = 'Loading context...';
+        el.classList.add('visible');
+
+        try {
+            const resp = await fetch('/api/context/' + chunkId);
+            if (resp.ok) {
+                const data = await resp.json();
+                el.innerHTML = data.before.map(t => '<p style="opacity:0.6">' + t + '</p>').join('')
+                    + '<p class="highlight">' + data.current + '</p>'
+                    + data.after.map(t => '<p style="opacity:0.6">' + t + '</p>').join('');
+            } else {
+                el.textContent = 'Could not load context.';
+            }
+        } catch(e) {
+            el.textContent = 'Error loading context.';
+        }
+    }
+
+    function copyCitation(idx) {
+        const data = resultData[idx - 1];
+        if (!data) return;
+
+        const citation = data.citation;
+        const excerpt = data.text.substring(0, 500);
+        const pageInfo = data.pdf_page ? ' (p.' + data.pdf_page + ')' : '';
+
+        const text = citation + pageInfo + '\n\n"' + excerpt + '"';
+
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = event.target;
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = 'Copy citation';
+                btn.classList.remove('copied');
+            }, 2000);
+        });
+    }
+    </script>
 </body>
 </html>
