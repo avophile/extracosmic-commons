@@ -20,8 +20,19 @@ _TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
+_cached_components = None
+
+
 def _get_components():
-    """Lazy-initialize database, embedder, index, search engine."""
+    """Lazy-initialize and cache database, embedder, index, search engine.
+
+    Components are cached after first initialization to avoid reloading
+    the 680MB BM25 index and embedding model on every request.
+    """
+    global _cached_components
+    if _cached_components is not None:
+        return _cached_components
+
     from ..bm25 import BM25Index
     from ..database import Database
     from ..embeddings import EmbeddingPipeline
@@ -39,7 +50,8 @@ def _get_components():
     bm25 = BM25Index(index_path=bm25_path) if (bm25_path / "bm25_corpus.pkl").exists() else None
 
     engine = SearchEngine(db, embedder, index, bm25=bm25)
-    return db, engine
+    _cached_components = (db, engine)
+    return _cached_components
 
 
 def _format_citation(source) -> str:
@@ -55,7 +67,6 @@ async def home(request: Request):
     """Search form and corpus stats."""
     db, _ = _get_components()
     stats = db.get_stats()
-    db.close()
     return templates.TemplateResponse(request, "search.html", {
         "stats": stats,
         "results": None,
@@ -164,7 +175,6 @@ async def api_context(chunk_id: str):
     before = [c.text for c in source_chunks[max(0, idx - 3):idx]]
     after = [c.text for c in source_chunks[idx + 1:idx + 4]]
 
-    db.close()
     return {
         "before": before,
         "current": chunk.text,
@@ -205,7 +215,6 @@ async def api_search(
             ] if r.cross_translations else None,
         })
 
-    db.close()
     return output
 
 
@@ -214,5 +223,4 @@ async def api_stats():
     """JSON API for corpus stats."""
     db, _ = _get_components()
     stats = db.get_stats()
-    db.close()
     return stats
