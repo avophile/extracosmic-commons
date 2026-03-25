@@ -307,6 +307,74 @@ class Database:
         ).fetchall()
         return [Chunk.from_dict(dict(r)) for r in rows]
 
+    def find_structural_matches(
+        self, chunk: Chunk, work_id: str, exclude_source_id: str | None = None
+    ) -> list[tuple[Chunk, float]]:
+        """Find chunks from other editions that structurally match this chunk.
+
+        Returns (chunk, confidence) pairs. Match hierarchy:
+        1. Same gw_page → confidence 0.9
+        2. Same canonical_section → confidence 0.6
+        3. Same heading (exact) → confidence 0.5
+        """
+        results: list[tuple[Chunk, float]] = []
+        ref = chunk.structural_ref or {}
+
+        # Get all source IDs for this work
+        work_sources = self.get_sources_by_work_id(work_id)
+        work_source_ids = [s.id for s in work_sources]
+        if exclude_source_id:
+            work_source_ids = [sid for sid in work_source_ids if sid != exclude_source_id]
+        if not work_source_ids:
+            return []
+
+        placeholders = ",".join("?" for _ in work_source_ids)
+
+        # Strategy 1: same gw_page
+        gw_page = ref.get("gw_page")
+        if gw_page:
+            rows = self.conn.execute(
+                f"""SELECT * FROM chunks
+                    WHERE source_id IN ({placeholders})
+                    AND json_extract(structural_ref, '$.gw_page') = ?
+                    ORDER BY paragraph_index""",
+                [*work_source_ids, gw_page],
+            ).fetchall()
+            for r in rows:
+                results.append((Chunk.from_dict(dict(r)), 0.9))
+            if results:
+                return results
+
+        # Strategy 2: same canonical_section
+        canon = ref.get("canonical_section")
+        if canon:
+            rows = self.conn.execute(
+                f"""SELECT * FROM chunks
+                    WHERE source_id IN ({placeholders})
+                    AND json_extract(structural_ref, '$.canonical_section') = ?
+                    ORDER BY paragraph_index LIMIT 10""",
+                [*work_source_ids, canon],
+            ).fetchall()
+            for r in rows:
+                results.append((Chunk.from_dict(dict(r)), 0.6))
+            if results:
+                return results
+
+        # Strategy 3: same heading text
+        heading = ref.get("heading")
+        if heading:
+            rows = self.conn.execute(
+                f"""SELECT * FROM chunks
+                    WHERE source_id IN ({placeholders})
+                    AND json_extract(structural_ref, '$.heading') = ?
+                    ORDER BY paragraph_index LIMIT 10""",
+                [*work_source_ids, heading],
+            ).fetchall()
+            for r in rows:
+                results.append((Chunk.from_dict(dict(r)), 0.5))
+
+        return results
+
     # --- Analysis CRUD ---
 
     def insert_analysis(self, analysis: Analysis) -> str:

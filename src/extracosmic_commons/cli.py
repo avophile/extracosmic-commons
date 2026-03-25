@@ -259,10 +259,11 @@ def list_profiles_cmd():
 @click.option("--language", help="Filter by language code (en, de)")
 @click.option("--type", "source_type", help="Filter by source type (pdf, transcript)")
 @click.option("--bilingual", is_flag=True, help="Show bilingual pairs")
+@click.option("--compare", is_flag=True, help="Show cross-translation comparisons")
 @click.option("--ref", multiple=True, help="Structural ref filter (key=value)")
 @click.option("--no-diversify", is_flag=True, help="Disable source diversity (rank by score only)")
 @click.pass_context
-def search(ctx, query, top_k, lecturer, language, source_type, bilingual, ref, no_diversify):
+def search(ctx, query, top_k, lecturer, language, source_type, bilingual, compare, ref, no_diversify):
     """Search the corpus with hybrid semantic + keyword matching."""
     from .citations import CitationFormatter
     from .search import SearchEngine
@@ -290,7 +291,8 @@ def search(ctx, query, top_k, lecturer, language, source_type, bilingual, ref, n
             filters["structural_ref"] = structural
 
     results = engine.search(
-        query, top_k=top_k, bilingual=bilingual, diversify=not no_diversify, **filters
+        query, top_k=top_k, bilingual=bilingual, compare=compare,
+        diversify=not no_diversify, **filters,
     )
 
     if not results:
@@ -335,8 +337,91 @@ def search(ctx, query, top_k, lecturer, language, source_type, bilingual, ref, n
                 paired_text += "..."
             click.echo(f"\n  [{lang}] {paired_text}")
 
+        # Cross-translation comparisons
+        if r.cross_translations:
+            click.echo("\n  Compare:")
+            for xref in r.cross_translations:
+                xtext = xref.chunk.text[:150]
+                if len(xref.chunk.text) > 150:
+                    xtext += "..."
+                conf = f" ({xref.confidence:.0%})" if xref.confidence < 1.0 else ""
+                page_info = ""
+                xref_ref = xref.chunk.structural_ref or {}
+                if xref_ref.get("translation_page"):
+                    page_info = f" p.{xref_ref['translation_page']}"
+                elif xref.chunk.pdf_page:
+                    page_info = f" p.{xref.chunk.pdf_page}"
+                click.echo(f"    {xref.edition_label}{page_info}{conf}: {xtext}")
+
     click.echo(f"\n{'─' * 60}")
     click.echo(f"{len(results)} results for: {query}")
+
+
+@main.command()
+@click.option("--work-id", help="Align a specific work")
+@click.option("--all", "all_works", is_flag=True, help="Align all works with multiple editions")
+@click.option("--dry-run", is_flag=True, help="Preview alignment")
+@click.pass_context
+def align(ctx, work_id, all_works, dry_run):
+    """Build cross-translation alignment (canonical sections + paragraph mapping)."""
+    from .alignment import align_work
+
+    data_dir = ctx.obj.get("data_dir")
+    dd = data_dir or _get_data_dir()
+    db = Database(dd / "extracosmic.db")
+    logging.basicConfig(level=logging.INFO)
+
+    if work_id:
+        work_ids = [work_id]
+    elif all_works:
+        # Find all work_ids with multiple sources
+        rows = db.conn.execute(
+            """SELECT json_extract(metadata, '$.work_id') as wid, COUNT(*) as cnt
+               FROM sources
+               WHERE json_extract(metadata, '$.work_id') IS NOT NULL
+               GROUP BY wid HAVING cnt > 1"""
+        ).fetchall()
+        work_ids = [r[0] for r in rows]
+        click.echo(f"Found {len(work_ids)} works with multiple editions")
+    else:
+        click.echo("Provide --work-id or --all", err=True)
+        db.close()
+        return
+
+    for wid in work_ids:
+        click.echo(f"\nAligning: {wid}")
+        if dry_run:
+            sources = db.get_sources_by_work_id(wid)
+            click.echo(f"  {len(sources)} sources")
+            for s in sources:
+                click.echo(f"    {s.title[:60]} ({s.metadata.get('edition_id', '?')})")
+        else:
+            stats = align_work(wid, db)
+            click.echo(f"  Canonical sections: {stats['canonical_sections_assigned']}")
+            click.echo(f"  Paragraphs aligned: {stats['paragraphs_aligned']}")
+
+    db.close()
+
+
+@main.command()
+@click.option("--port", default=8000, help="Port number")
+@click.option("--host", default="127.0.0.1", help="Host address")
+@click.pass_context
+def serve(ctx, port, host):
+    """Start the web viewer."""
+    import uvicorn
+
+    data_dir = ctx.obj.get("data_dir") or _get_data_dir()
+    os.environ["EC_DATA_DIR"] = str(data_dir)
+
+    click.echo(f"Starting Extracosmic Commons web viewer at http://{host}:{port}")
+    click.echo(f"Data directory: {data_dir}")
+    uvicorn.run(
+        "extracosmic_commons.web.app:app",
+        host=host,
+        port=port,
+        reload=False,
+    )
 
 
 @main.command("build-bm25")

@@ -151,11 +151,76 @@ class SearchEngine:
 
         return hybrid
 
+    def _resolve_cross_translations(
+        self, chunk: Chunk, source: Source
+    ) -> list[CrossRef] | None:
+        """Find corresponding passages in other editions of the same work."""
+        work_id = source.metadata.get("work_id")
+        if not work_id:
+            return None
+
+        ref = chunk.structural_ref or {}
+
+        # Strategy 1: canonical_para match (highest confidence)
+        canonical_para = ref.get("canonical_para")
+        if canonical_para:
+            matches = self.db.get_chunks_by_structural_ref(canonical_para=canonical_para)
+            matches = [m for m in matches if m.source_id != chunk.source_id]
+            if matches:
+                return self._build_crossrefs(matches[:5])
+
+        # Strategy 2: same gw_page
+        gw_page = ref.get("gw_page")
+        if gw_page:
+            matches = self.db.get_chunks_by_structural_ref(gw_page=gw_page)
+            matches = [m for m in matches if m.source_id != chunk.source_id]
+            if matches:
+                return self._build_crossrefs(matches[:5], confidence=0.8)
+
+        # Strategy 3: same canonical_section (broader)
+        canonical_section = ref.get("canonical_section")
+        if canonical_section:
+            matches = self.db.get_chunks_by_canonical_section(canonical_section)
+            matches = [m for m in matches if m.source_id != chunk.source_id]
+            if matches:
+                return self._build_crossrefs(matches[:3], confidence=0.6)
+
+        return None
+
+    def _build_crossrefs(
+        self, chunks: list[Chunk], confidence: float = 0.9
+    ) -> list[CrossRef]:
+        """Build CrossRef objects from matched chunks."""
+        crossrefs = []
+        seen_sources: set[str] = set()
+
+        for chunk in chunks:
+            if chunk.source_id in seen_sources:
+                continue
+            seen_sources.add(chunk.source_id)
+
+            source = self.db.get_source(chunk.source_id)
+            if source is None:
+                continue
+
+            edition_label = source.metadata.get("edition_label", source.title[:30])
+            chunk_conf = (chunk.structural_ref or {}).get("alignment_confidence", confidence)
+
+            crossrefs.append(CrossRef(
+                edition_label=edition_label,
+                chunk=chunk,
+                source=source,
+                confidence=float(chunk_conf),
+            ))
+
+        return crossrefs
+
     def search(
         self,
         query: str,
         top_k: int = 10,
         bilingual: bool = False,
+        compare: bool = False,
         diversify: bool = True,
         **filters: Any,
     ) -> list[SearchResult]:
@@ -239,11 +304,17 @@ class SearchEngine:
                 paired_chunks = self.db.get_chunks_by_ids([chunk.paired_chunk_id])
                 paired = paired_chunks[0] if paired_chunks else None
 
+            # Cross-translation resolution
+            cross = None
+            if compare:
+                cross = self._resolve_cross_translations(chunk, source)
+
             results.append(SearchResult(
                 chunk=chunk,
                 score=scores.get(chunk.id, 0.0),
                 source=source,
                 paired_chunk=paired,
+                cross_translations=cross,
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)
