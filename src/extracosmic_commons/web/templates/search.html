@@ -189,16 +189,22 @@
                 </div>
                 <div class="result-text" id="text-{{ loop.index }}">{{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}</div>
 
-                <div class="result-actions">
+                <div class="result-actions"
+                     data-source-path="{{ r.source.source_path or '' }}"
+                     data-youtube-url="{{ r.chunk.youtube_url or '' }}"
+                     data-timestamp="{{ r.chunk.youtube_timestamp or '' }}"
+                     data-page="{{ r.chunk.pdf_page or 1 }}"
+                     data-chunk-id="{{ r.chunk.id }}"
+                     data-idx="{{ loop.index }}">
                     {% if r.chunk.youtube_url and r.chunk.youtube_url.startswith('http') %}
                     <a href="{{ r.chunk.youtube_url }}" target="_blank" title="Watch on YouTube">▶ YouTube [{{ r.chunk.youtube_timestamp }}]</a>
                     {% elif r.chunk.youtube_url and not r.chunk.youtube_url.startswith('http') %}
-                    <a href="#" onclick="openVideo('{{ r.chunk.youtube_url }}', '{{ r.chunk.youtube_timestamp }}'); return false;" title="Open video at {{ r.chunk.youtube_timestamp }}">▶ Video [{{ r.chunk.youtube_timestamp }}]</a>
+                    <a href="#" class="action-video" title="Open video at {{ r.chunk.youtube_timestamp }}">▶ Video [{{ r.chunk.youtube_timestamp }}]</a>
                     {% elif r.source.source_path %}
-                    <a href="#" onclick="openPDF('{{ r.source.source_path }}', {{ r.chunk.pdf_page or 1 }}); return false;" title="Open PDF at page {{ r.chunk.pdf_page or 1 }}">Open PDF{% if r.chunk.pdf_page %} p.{{ r.chunk.pdf_page }}{% endif %}</a>
+                    <a href="#" class="action-pdf" title="Open PDF at page {{ r.chunk.pdf_page or 1 }}">Open PDF{% if r.chunk.pdf_page %} p.{{ r.chunk.pdf_page }}{% endif %}</a>
                     {% endif %}
-                    <button onclick="expandContext('{{ r.chunk.id }}', {{ loop.index }})" id="expand-btn-{{ loop.index }}" title="Show more surrounding text">Expand context</button>
-                    <button onclick="copyCitation({{ loop.index }})" title="Copy citation + excerpt to clipboard">Copy citation</button>
+                    <button class="action-expand" id="expand-btn-{{ loop.index }}" title="Show more surrounding text">Expand context</button>
+                    <button class="action-cite" title="Copy citation + excerpt to clipboard">Copy citation</button>
                 </div>
 
                 <div class="expanded-context" id="context-{{ loop.index }}">
@@ -251,79 +257,85 @@
     // Store full data for each result (passed from server)
     const resultData = {{ result_data_json|safe if result_data_json else '[]' }};
 
-    async function openPDF(path, page) {
-        try {
-            const resp = await fetch('/api/open-pdf?path=' + encodeURIComponent(path) + '&page=' + page);
-            const data = await resp.json();
-            if (data.error) {
-                alert('Could not open PDF: ' + data.error);
-            }
-        } catch(e) {
-            alert('Error opening PDF: ' + e);
-        }
-    }
+    // Event delegation — avoids inline onclick with path quoting issues
+    document.addEventListener('click', async function(e) {
+        const actions = e.target.closest('.result-actions');
+        if (!actions) return;
 
-    async function openVideo(path, timestamp) {
-        try {
-            const resp = await fetch('/api/open-video?path=' + encodeURIComponent(path) + '&timestamp=' + encodeURIComponent(timestamp));
-            const data = await resp.json();
-            if (data.error) {
-                alert('Could not open video: ' + data.error);
-            }
-        } catch(e) {
-            alert('Error opening video: ' + e);
-        }
-    }
+        const path = actions.dataset.sourcePath;
+        const videoUrl = actions.dataset.youtubeUrl;
+        const timestamp = actions.dataset.timestamp;
+        const page = parseInt(actions.dataset.page) || 1;
+        const chunkId = actions.dataset.chunkId;
+        const idx = parseInt(actions.dataset.idx);
 
-    async function expandContext(chunkId, idx) {
-        const el = document.getElementById('context-' + idx);
-        const btn = document.getElementById('expand-btn-' + idx);
-        if (el.classList.contains('visible')) {
-            el.classList.remove('visible');
-            btn.textContent = 'Expand context';
-            return;
-        }
-        el.textContent = 'Loading context...';
-        el.classList.add('visible');
-        btn.textContent = 'Contract context';
-
-        try {
-            const resp = await fetch('/api/context/' + chunkId);
-            if (resp.ok) {
+        // Open PDF
+        if (e.target.classList.contains('action-pdf')) {
+            e.preventDefault();
+            try {
+                const resp = await fetch('/api/open-pdf?path=' + encodeURIComponent(path) + '&page=' + page);
                 const data = await resp.json();
-                el.innerHTML = data.before.map(t => '<p style="opacity:0.6">' + t + '</p>').join('')
-                    + '<p class="highlight">' + data.current + '</p>'
-                    + data.after.map(t => '<p style="opacity:0.6">' + t + '</p>').join('');
-            } else {
-                el.textContent = 'Could not load context.';
+                if (data.error) alert('Could not open PDF: ' + data.error);
+            } catch(err) { alert('Error opening PDF: ' + err); }
+        }
+
+        // Open Video
+        if (e.target.classList.contains('action-video')) {
+            e.preventDefault();
+            try {
+                const resp = await fetch('/api/open-video?path=' + encodeURIComponent(videoUrl) + '&timestamp=' + encodeURIComponent(timestamp));
+                const data = await resp.json();
+                if (data.error) alert('Could not open video: ' + data.error);
+            } catch(err) { alert('Error opening video: ' + err); }
+        }
+
+        // Expand/Contract context
+        if (e.target.classList.contains('action-expand')) {
+            const el = document.getElementById('context-' + idx);
+            const btn = e.target;
+            if (el.classList.contains('visible')) {
+                el.classList.remove('visible');
+                btn.textContent = 'Expand context';
+                return;
+            }
+            el.textContent = 'Loading context...';
+            el.classList.add('visible');
+            btn.textContent = 'Contract context';
+            try {
+                const resp = await fetch('/api/context/' + chunkId);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    el.innerHTML = data.before.map(t => '<p style="opacity:0.6">' + t + '</p>').join('')
+                        + '<p class="highlight">' + data.current + '</p>'
+                        + data.after.map(t => '<p style="opacity:0.6">' + t + '</p>').join('');
+                } else {
+                    el.textContent = 'Could not load context.';
+                    btn.textContent = 'Expand context';
+                }
+            } catch(err) {
+                el.textContent = 'Error loading context.';
                 btn.textContent = 'Expand context';
             }
-        } catch(e) {
-            el.textContent = 'Error loading context.';
-            btn.textContent = 'Expand context';
         }
-    }
 
-    function copyCitation(idx) {
-        const data = resultData[idx - 1];
-        if (!data) return;
-
-        const citation = data.citation;
-        const excerpt = data.text.substring(0, 500);
-        const pageInfo = data.pdf_page ? ' (p.' + data.pdf_page + ')' : '';
-
-        const text = citation + pageInfo + '\n\n"' + excerpt + '"';
-
-        navigator.clipboard.writeText(text).then(() => {
-            const btn = event.target;
-            btn.textContent = 'Copied!';
-            btn.classList.add('copied');
-            setTimeout(() => {
-                btn.textContent = 'Copy citation';
-                btn.classList.remove('copied');
-            }, 2000);
-        });
-    }
+        // Copy citation
+        if (e.target.classList.contains('action-cite')) {
+            const data = resultData[idx - 1];
+            if (!data) return;
+            const citation = data.citation;
+            const excerpt = data.text.substring(0, 500);
+            const pageInfo = data.pdf_page ? ' (p.' + data.pdf_page + ')' : '';
+            const text = citation + pageInfo + '\n\n"' + excerpt + '"';
+            navigator.clipboard.writeText(text).then(() => {
+                e.target.textContent = 'Copied!';
+                e.target.classList.add('copied');
+                setTimeout(() => {
+                    e.target.textContent = 'Copy citation';
+                    e.target.classList.remove('copied');
+                }, 2000);
+            });
+        }
+    });
     </script>
 </body>
 </html>
