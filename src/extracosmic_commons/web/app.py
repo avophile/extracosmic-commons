@@ -273,28 +273,8 @@ async def api_open_pdf(path: str = Query(...), page: int = Query(1)):
     if not filepath.exists():
         return {"error": f"File not found: {local_path} (original: {path})"}
 
-    suffix = filepath.suffix.lower()
-
-    if suffix == ".pdf" and page > 1:
-        # Open PDF in Preview at the specified page via AppleScript
-        script = f'''
-            tell application "Preview"
-                open POSIX file "{filepath}"
-                activate
-            end tell
-            delay 1
-            tell application "Preview"
-                tell document 1
-                    go to page {page}
-                end tell
-            end tell
-        '''
-        subprocess.Popen(["osascript", "-e", script])
-    elif suffix == ".mp4":
-        # Open video in QuickTime
-        subprocess.Popen(["open", "-a", "QuickTime Player", str(filepath)])
-    else:
-        subprocess.Popen(["open", str(filepath)])
+    # Use macOS 'open' command — works without Automation permissions
+    subprocess.Popen(["open", str(filepath)])
 
     return {"ok": True, "path": str(filepath), "page": page}
 

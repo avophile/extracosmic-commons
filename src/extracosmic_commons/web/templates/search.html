@@ -199,9 +199,9 @@
                     {% if r.chunk.youtube_url and r.chunk.youtube_url.startswith('http') %}
                     <a href="{{ r.chunk.youtube_url }}" target="_blank" title="Watch on YouTube">▶ YouTube [{{ r.chunk.youtube_timestamp }}]</a>
                     {% elif r.chunk.youtube_url and not r.chunk.youtube_url.startswith('http') %}
-                    <a href="#" class="action-video" title="Open video at {{ r.chunk.youtube_timestamp }}">▶ Video [{{ r.chunk.youtube_timestamp }}]</a>
+                    <a href="javascript:void(0)" class="action-video" title="Open video at {{ r.chunk.youtube_timestamp }}">▶ Video [{{ r.chunk.youtube_timestamp }}]</a>
                     {% elif r.source.source_path %}
-                    <a href="#" class="action-pdf" title="Open PDF at page {{ r.chunk.pdf_page or 1 }}">Open PDF{% if r.chunk.pdf_page %} p.{{ r.chunk.pdf_page }}{% endif %}</a>
+                    <a href="javascript:void(0)" class="action-pdf" title="Open PDF at page {{ r.chunk.pdf_page or 1 }}">Open PDF{% if r.chunk.pdf_page %} p.{{ r.chunk.pdf_page }}{% endif %}</a>
                     {% endif %}
                     <button class="action-expand" id="expand-btn-{{ loop.index }}" title="Show more surrounding text">Expand context</button>
                     <button class="action-cite" title="Copy citation + excerpt to clipboard">Copy citation</button>
