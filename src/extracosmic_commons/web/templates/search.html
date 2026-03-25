@@ -214,11 +214,16 @@
     // Store full data for each result (passed from server)
     const resultData = {{ result_data_json|safe if result_data_json else '[]' }};
 
-    function openPDF(path, page) {
-        // Open PDF in default viewer at the specified page
-        // For local files, we use a file:// URL
-        // macOS: open command handles page navigation for Preview.app
-        window.open('file://' + encodeURI(path), '_blank');
+    async function openPDF(path, page) {
+        try {
+            const resp = await fetch('/api/open-pdf?path=' + encodeURIComponent(path) + '&page=' + page);
+            const data = await resp.json();
+            if (data.error) {
+                alert('Could not open PDF: ' + data.error);
+            }
+        } catch(e) {
+            alert('Error opening PDF: ' + e);
+        }
     }
 
     async function expandContext(chunkId, idx) {

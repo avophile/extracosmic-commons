@@ -130,7 +130,7 @@ async def search_view(
             "source_title": r.source.title,
         })
 
-    db.close()
+
 
     return templates.TemplateResponse(request, "search.html", {
         "stats": None,
@@ -151,7 +151,7 @@ async def api_context(chunk_id: str):
     # Find the chunk
     chunks = db.get_chunks_by_ids([chunk_id])
     if not chunks:
-        db.close()
+    
         return {"error": "Chunk not found"}
 
     chunk = chunks[0]
@@ -168,7 +168,7 @@ async def api_context(chunk_id: str):
             break
 
     if idx is None:
-        db.close()
+    
         return {"before": [], "current": chunk.text, "after": []}
 
     # Get 3 chunks before and 3 after
@@ -216,6 +216,20 @@ async def api_search(
         })
 
     return output
+
+
+@app.get("/api/open-pdf")
+async def api_open_pdf(path: str = Query(...), page: int = Query(1)):
+    """Open a PDF file in the system's default viewer."""
+    import subprocess
+
+    filepath = Path(path)
+    if not filepath.exists():
+        return {"error": f"File not found: {path}"}
+
+    # macOS: use 'open' command
+    subprocess.Popen(["open", str(filepath)])
+    return {"ok": True, "path": str(filepath), "page": page}
 
 
 @app.get("/api/stats")
