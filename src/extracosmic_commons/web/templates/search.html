@@ -174,9 +174,11 @@
                 <div class="result-text" id="text-{{ loop.index }}">{{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}</div>
 
                 <div class="result-actions">
-                    {% if r.chunk.youtube_url %}
+                    {% if r.chunk.youtube_url and r.chunk.youtube_url.startswith('http') %}
                     <a href="{{ r.chunk.youtube_url }}" target="_blank" title="Watch on YouTube">▶ YouTube [{{ r.chunk.youtube_timestamp }}]</a>
-                    {% elif r.chunk.lecturer and not r.chunk.youtube_url and r.chunk.youtube_timestamp %}
+                    {% elif r.chunk.youtube_url and not r.chunk.youtube_url.startswith('http') %}
+                    <a href="#" onclick="openLocalFile('{{ r.chunk.youtube_url }}'); return false;" title="Open video at timestamp">▶ Video [{{ r.chunk.youtube_timestamp }}]</a>
+                    {% elif r.chunk.lecturer and r.chunk.youtube_timestamp %}
                     <a href="#" onclick="openLocalFile('{{ r.source.source_path }}'); return false;" title="Open transcript file">▶ Lecture [{{ r.chunk.youtube_timestamp }}]</a>
                     {% elif r.source.source_path %}
                     <a href="#" onclick="openPDF('{{ r.source.source_path }}', {{ r.chunk.pdf_page or 1 }}); return false;" title="Open source PDF">Open PDF</a>

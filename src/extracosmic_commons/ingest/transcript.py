@@ -26,9 +26,13 @@ TIMESTAMP_PATTERN = re.compile(
     r'\*\*\[(\d{1,2}:\d{2}:\d{2})\](?:\((https?://[^)]+)\))?\*\*\s*'
 )
 
-# Matches lecture/session headers like: ## Session 1a — Title  or  ## Lecture 1 — Title
+# Matches lecture/session headers:
+#   ## Session 1a — Title        (Thompson)
+#   ## Lecture 1 — Title          (Houlgate)
+#   ## Being 5                    (Radnik)
+#   ## Essence 3 — Shine (Part 2) (Radnik)
 LECTURE_HEADER_PATTERN = re.compile(
-    r'^##\s+(?:Session|Lecture)\s+(\d+\w?)\s*[—–-]\s*(.+)',
+    r'^##\s+(?:Session|Lecture|Being|Essence)\s+(\d+\w?)\s*(?:[—–-]\s*(.+))?',
     re.MULTILINE,
 )
 
