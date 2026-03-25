@@ -23,6 +23,17 @@ templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 _cached_components = None
 
 
+@app.on_event("startup")
+async def preload_components():
+    """Preload indexes on startup so the first request doesn't timeout."""
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.info("Preloading indexes...")
+    _get_components()
+    logger.info("Indexes loaded, ready to serve.")
+
+
 def _get_components():
     """Lazy-initialize and cache database, embedder, index, search engine.
 
