@@ -22,6 +22,16 @@ from .models import Chunk, Source
 
 
 @dataclass
+class CrossRef:
+    """A corresponding passage in another translation/edition of the same work."""
+
+    edition_label: str
+    chunk: Chunk
+    source: Source
+    confidence: float
+
+
+@dataclass
 class SearchResult:
     """A single search result with chunk, score, and source metadata."""
 
@@ -29,6 +39,56 @@ class SearchResult:
     score: float
     source: Source
     paired_chunk: Chunk | None = None
+    cross_translations: list[CrossRef] | None = None
+
+
+def _diversify_results(results: list[SearchResult], top_k: int) -> list[SearchResult]:
+    """Ensure results include different source types and distinct sources.
+
+    Round-robin across source types (transcript, pdf, bilingual_pair),
+    picking the highest-scoring unseen chunk from each type. Ensures a
+    scholar sees what lecturers say alongside what the texts say, rather
+    than getting 10 results all from one commentary.
+    """
+    if len(results) <= top_k:
+        return results
+
+    # Group by source type
+    by_type: dict[str, list[SearchResult]] = {}
+    for r in results:
+        t = r.source.type.value
+        by_type.setdefault(t, []).append(r)
+
+    # Also track distinct sources within each type
+    selected: list[SearchResult] = []
+    seen_source_ids: set[str] = set()
+
+    # Phase 1: one top result per source type
+    for source_type in sorted(by_type.keys()):
+        for r in by_type[source_type]:
+            if r.source.id not in seen_source_ids:
+                selected.append(r)
+                seen_source_ids.add(r.source.id)
+                break
+
+    # Phase 2: one top result per distinct source (across all types)
+    for r in results:
+        if len(selected) >= top_k:
+            break
+        if r.source.id not in seen_source_ids:
+            selected.append(r)
+            seen_source_ids.add(r.source.id)
+
+    # Phase 3: fill remaining slots by score
+    selected_ids = {r.chunk.id for r in selected}
+    for r in results:
+        if len(selected) >= top_k:
+            break
+        if r.chunk.id not in selected_ids:
+            selected.append(r)
+            selected_ids.add(r.chunk.id)
+
+    return selected[:top_k]
 
 
 class SearchEngine:
@@ -96,6 +156,7 @@ class SearchEngine:
         query: str,
         top_k: int = 10,
         bilingual: bool = False,
+        diversify: bool = True,
         **filters: Any,
     ) -> list[SearchResult]:
         """Search the corpus.
@@ -104,6 +165,9 @@ class SearchEngine:
             query: Natural language search query.
             top_k: Maximum number of results.
             bilingual: If True, auto-fetch paired chunks for bilingual results.
+            diversify: If True (default), ensure results include different source
+                types and distinct sources, not just the highest-scoring chunks
+                from one dominant source.
             **filters: Post-retrieval filters. Supported:
                 - lecturer: str
                 - language: str
@@ -183,4 +247,8 @@ class SearchEngine:
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)
+
+        if diversify and len(results) > top_k:
+            results = _diversify_results(results, top_k)
+
         return results[:top_k]

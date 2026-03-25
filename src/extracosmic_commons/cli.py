@@ -182,6 +182,76 @@ def import_workbench(ctx, path):
     click.echo(f"\nImported {len(sources)} documents from scholarly workbench.")
 
 
+@main.command("ingest-edition")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--profile", required=True, help="Edition profile ID (e.g., di-giovanni-2010)")
+@click.option("--page-offset", default=0, type=int, help="PDF page → printed page offset")
+@click.option("--title", help="Override source title")
+@click.option("--recursive", "-r", is_flag=True, help="Recurse into subdirectories")
+@click.pass_context
+def ingest_edition(ctx, path, profile, page_offset, title, recursive):
+    """Ingest a critical edition PDF with character-level extraction."""
+    from .edition_profiles import get_profile
+    from .ingest.critical_edition import CriticalEditionIngester
+
+    data_dir = ctx.obj.get("data_dir")
+    db, embedder, index, dd = _init_components(data_dir)
+
+    ep = get_profile(profile)
+    if ep is None:
+        click.echo(f"Unknown profile: {profile}. Use 'ec list-profiles' to see available profiles.", err=True)
+        return
+
+    if page_offset:
+        ep.page_offset = page_offset
+
+    ingester = CriticalEditionIngester(ep)
+    target = Path(path)
+
+    if target.is_file():
+        files = [target]
+    elif target.is_dir():
+        pattern = "**/*.pdf" if recursive else "*.pdf"
+        files = sorted(target.glob(pattern))
+    else:
+        click.echo(f"Error: {path} is not a file or directory", err=True)
+        return
+
+    total_chunks = 0
+    for f in files:
+        try:
+            source = ingester.ingest(
+                f, db, embedder, index,
+                title=title or f.stem,
+                author=ep.translator.split(";") if ep.translator else [],
+            )
+            chunks = db.get_chunks_by_source(source.id)
+            click.echo(f"  Ingested: {source.title} ({len(chunks)} chunks, profile={profile})")
+            total_chunks += len(chunks)
+        except Exception as e:
+            click.echo(f"  Failed: {f.name}: {e}", err=True)
+
+    index.save(dd / "faiss_index")
+    click.echo(f"\nDone. {len(files)} files, {total_chunks} chunks total.")
+
+
+@main.command("list-profiles")
+def list_profiles_cmd():
+    """List available edition profiles."""
+    from .edition_profiles import list_profiles
+
+    profiles = list_profiles()
+    if not profiles:
+        click.echo("No profiles defined.")
+        return
+
+    click.echo(f"\n  {'Edition ID':<25} {'Work':<25} {'Ref System':<12} {'Name'}")
+    click.echo(f"  {'─' * 25} {'─' * 25} {'─' * 12} {'─' * 40}")
+    for p in profiles:
+        click.echo(f"  {p.edition_id:<25} {p.work_id:<25} {p.reference_system:<12} {p.name}")
+    click.echo()
+
+
 @main.command()
 @click.argument("query")
 @click.option("-k", "--top-k", default=10, help="Number of results")
@@ -190,8 +260,9 @@ def import_workbench(ctx, path):
 @click.option("--type", "source_type", help="Filter by source type (pdf, transcript)")
 @click.option("--bilingual", is_flag=True, help="Show bilingual pairs")
 @click.option("--ref", multiple=True, help="Structural ref filter (key=value)")
+@click.option("--no-diversify", is_flag=True, help="Disable source diversity (rank by score only)")
 @click.pass_context
-def search(ctx, query, top_k, lecturer, language, source_type, bilingual, ref):
+def search(ctx, query, top_k, lecturer, language, source_type, bilingual, ref, no_diversify):
     """Search the corpus with hybrid semantic + keyword matching."""
     from .citations import CitationFormatter
     from .search import SearchEngine
@@ -218,7 +289,9 @@ def search(ctx, query, top_k, lecturer, language, source_type, bilingual, ref):
         if structural:
             filters["structural_ref"] = structural
 
-    results = engine.search(query, top_k=top_k, bilingual=bilingual, **filters)
+    results = engine.search(
+        query, top_k=top_k, bilingual=bilingual, diversify=not no_diversify, **filters
+    )
 
     if not results:
         click.echo("No results found.")

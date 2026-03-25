@@ -266,6 +266,47 @@ class Database:
         rows = self.conn.execute(query, params).fetchall()
         return [Chunk.from_dict(dict(r)) for r in rows]
 
+    # --- Chunk updates ---
+
+    def update_chunk_structural_ref(self, chunk_id: str, structural_ref: dict | None) -> None:
+        """Update a chunk's structural_ref in place."""
+        import json
+
+        ref_json = json.dumps(structural_ref) if structural_ref else None
+        self.conn.execute(
+            "UPDATE chunks SET structural_ref = ? WHERE id = ?",
+            (ref_json, chunk_id),
+        )
+        self.conn.commit()
+
+    def delete_source_and_chunks(self, source_id: str) -> int:
+        """Remove a source and all its chunks. Returns chunk count deleted."""
+        count = self.conn.execute(
+            "SELECT COUNT(*) FROM chunks WHERE source_id = ?", (source_id,)
+        ).fetchone()[0]
+        self.conn.execute("DELETE FROM chunks WHERE source_id = ?", (source_id,))
+        self.conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+        self.conn.commit()
+        return count
+
+    # --- Work/Edition queries ---
+
+    def get_sources_by_work_id(self, work_id: str) -> list[Source]:
+        """Get all sources for a work (across editions/versions)."""
+        rows = self.conn.execute(
+            "SELECT * FROM sources WHERE json_extract(metadata, '$.work_id') = ?",
+            (work_id,),
+        ).fetchall()
+        return [Source.from_dict(dict(r)) for r in rows]
+
+    def get_chunks_by_canonical_section(self, canonical_section: str) -> list[Chunk]:
+        """Get chunks across all editions that share a canonical section ID."""
+        rows = self.conn.execute(
+            "SELECT * FROM chunks WHERE json_extract(structural_ref, '$.canonical_section') = ? ORDER BY paragraph_index",
+            (canonical_section,),
+        ).fetchall()
+        return [Chunk.from_dict(dict(r)) for r in rows]
+
     # --- Analysis CRUD ---
 
     def insert_analysis(self, analysis: Analysis) -> str:
