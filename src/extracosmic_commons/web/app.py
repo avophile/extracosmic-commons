@@ -62,6 +62,39 @@ def _format_citation(source) -> str:
     return formatter.chicago(source)
 
 
+# Path mapping: RunPod ingestion paths → local filesystem paths
+_PATH_MAP = [
+    ("/workspace/corpus/zotero_hegel/Hegel texts/",
+     os.path.expanduser("~/Documents/HegelTranscripts/Hegel texts/")),
+    ("/workspace/corpus/zotero_houlgate/Houlgate texts/",
+     os.path.expanduser("~/Documents/HegelTranscripts/Houlgate texts/")),
+    ("/workspace/corpus/zotero_thompson/Thompson texts/",
+     os.path.expanduser("~/Documents/HegelTranscripts/Thompson texts/")),
+    ("/workspace/corpus/zotero_radnik/Radnik texts/",
+     os.path.expanduser("~/Documents/HegelTranscripts/Radnik texts/")),
+    ("/workspace/corpus/workbench_pdfs/",
+     os.path.expanduser("~/Documents/scholarly-workbench-integrated/backend/user_files/default_user/uploads/")),
+    ("/workspace/corpus/desktop_hegel/",
+     os.path.expanduser("~/Desktop/Hegel/")),
+    ("/workspace/corpus/transcripts/",
+     os.path.expanduser("~/Documents/HegelTranscripts/")),
+    ("/workspace/corpus/houlgate_transcripts/",
+     os.path.expanduser("~/Documents/HegelTranscripts/houlgate/")),
+    ("/workspace/corpus/",
+     os.path.expanduser("~/Documents/")),
+]
+
+
+def _map_path(runpod_path: str | None) -> str | None:
+    """Translate a RunPod ingestion path to the local filesystem."""
+    if not runpod_path:
+        return None
+    for prefix, local in _PATH_MAP:
+        if runpod_path.startswith(prefix):
+            return local + runpod_path[len(prefix):]
+    return runpod_path  # Return as-is if no mapping found
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Search form and corpus stats."""
@@ -220,12 +253,14 @@ async def api_search(
 
 @app.get("/api/open-pdf")
 async def api_open_pdf(path: str = Query(...), page: int = Query(1)):
-    """Open a PDF file in the system's default viewer."""
+    """Open a PDF or file in the system's default viewer."""
     import subprocess
 
-    filepath = Path(path)
+    # Map RunPod paths to local paths
+    local_path = _map_path(path)
+    filepath = Path(local_path)
     if not filepath.exists():
-        return {"error": f"File not found: {path}"}
+        return {"error": f"File not found: {local_path} (original: {path})"}
 
     # macOS: use 'open' command
     subprocess.Popen(["open", str(filepath)])

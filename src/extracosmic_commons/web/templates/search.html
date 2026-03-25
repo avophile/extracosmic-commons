@@ -174,10 +174,14 @@
                 <div class="result-text" id="text-{{ loop.index }}">{{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}</div>
 
                 <div class="result-actions">
-                    {% if r.source.source_path %}
+                    {% if r.chunk.youtube_url %}
+                    <a href="{{ r.chunk.youtube_url }}" target="_blank" title="Watch on YouTube">▶ YouTube [{{ r.chunk.youtube_timestamp }}]</a>
+                    {% elif r.chunk.lecturer and not r.chunk.youtube_url and r.chunk.youtube_timestamp %}
+                    <a href="#" onclick="openLocalFile('{{ r.source.source_path }}'); return false;" title="Open transcript file">▶ Lecture [{{ r.chunk.youtube_timestamp }}]</a>
+                    {% elif r.source.source_path %}
                     <a href="#" onclick="openPDF('{{ r.source.source_path }}', {{ r.chunk.pdf_page or 1 }}); return false;" title="Open source PDF">Open PDF</a>
                     {% endif %}
-                    <button onclick="expandContext('{{ r.chunk.id }}', {{ loop.index }})" title="Show more surrounding text">Expand context</button>
+                    <button onclick="expandContext('{{ r.chunk.id }}', {{ loop.index }})" id="expand-btn-{{ loop.index }}" title="Show more surrounding text">Expand context</button>
                     <button onclick="copyCitation({{ loop.index }})" title="Copy citation + excerpt to clipboard">Copy citation</button>
                 </div>
 
@@ -226,14 +230,29 @@
         }
     }
 
+    async function openLocalFile(path) {
+        try {
+            const resp = await fetch('/api/open-pdf?path=' + encodeURIComponent(path) + '&page=1');
+            const data = await resp.json();
+            if (data.error) {
+                alert('Could not open file: ' + data.error);
+            }
+        } catch(e) {
+            alert('Error opening file: ' + e);
+        }
+    }
+
     async function expandContext(chunkId, idx) {
         const el = document.getElementById('context-' + idx);
+        const btn = document.getElementById('expand-btn-' + idx);
         if (el.classList.contains('visible')) {
             el.classList.remove('visible');
+            btn.textContent = 'Expand context';
             return;
         }
         el.textContent = 'Loading context...';
         el.classList.add('visible');
+        btn.textContent = 'Contract context';
 
         try {
             const resp = await fetch('/api/context/' + chunkId);
@@ -244,9 +263,11 @@
                     + data.after.map(t => '<p style="opacity:0.6">' + t + '</p>').join('');
             } else {
                 el.textContent = 'Could not load context.';
+                btn.textContent = 'Expand context';
             }
         } catch(e) {
             el.textContent = 'Error loading context.';
+            btn.textContent = 'Expand context';
         }
     }
 
