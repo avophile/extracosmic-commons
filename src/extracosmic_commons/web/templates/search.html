@@ -188,17 +188,18 @@
                     <span class="result-score">{{ "%.4f"|format(r.score) }}</span>
                 </div>
                 <div class="result-meta">
-                    {% if r.source.author %}<span>{{ r.source.author|join(', ') }}</span>{% endif %}
+                    {% if r.source.clean_authors is defined %}<span>{{ r.source.clean_authors }}</span>{% elif r.source.author %}<span>{{ r.source.author|join(', ') }}</span>{% endif %}
                     {% if r.chunk.pdf_page %}<span>Page {{ r.chunk.pdf_page }}</span>{% endif %}
                     {% if r.chunk.lecturer %}
                         {% if r.chunk.chunk_method == 'speaker_turn' %}
-                        <span class="speaker-badge {% if r.chunk.lecturer == 'Wu' %}wu{% elif r.chunk.lecturer == 'Douglas' %}douglas{% elif r.chunk.lecturer == 'Tony' %}tony{% else %}other{% endif %}">{{ r.chunk.lecturer }}</span>
+                        {% set display_speaker = r.chunk.lecturer if r.chunk.lecturer in ['Wu', 'Douglas', 'Tony'] else 'Wu' %}
+                        <span class="speaker-badge {% if display_speaker == 'Wu' %}wu{% elif display_speaker == 'Douglas' %}douglas{% elif display_speaker == 'Tony' %}tony{% else %}other{% endif %}">{{ display_speaker }}</span>
                         {% else %}
                         <span>{{ r.chunk.lecturer }}</span>
                         {% endif %}
                     {% endif %}
                     {% if r.chunk.youtube_url %}<span><a href="{{ r.chunk.youtube_url }}" target="_blank">[{{ r.chunk.youtube_timestamp }}]</a></span>{% endif %}
-                    {% if r.chunk.structural_ref %}
+                    {% if r.chunk.structural_ref and r.chunk.chunk_method != 'speaker_turn' %}
                         {% for k, v in r.chunk.structural_ref.items() if k not in ['canonical_section', 'canonical_para', 'alignment_confidence', 'para_group_index'] %}
                         <span>{{ k }}={{ v }}</span>
                         {% endfor %}

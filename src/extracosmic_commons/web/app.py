@@ -66,8 +66,20 @@ def _get_components():
 
 
 def _format_citation(source) -> str:
-    """Generate a Chicago citation for a source."""
+    """Generate a Chicago citation for a source.
+
+    Filters out raw SPEAKER_XX labels from the author list before
+    formatting, since whisperx sometimes over-segments speakers.
+    """
     from ..citations import CitationFormatter
+    import copy
+
+    # Clean raw speaker IDs from author list for citation display
+    if hasattr(source, 'author') and isinstance(source.author, list):
+        clean = [a for a in source.author if not a.startswith('SPEAKER_') and a != 'UNKNOWN']
+        if clean != source.author:
+            source = copy.copy(source)
+            source.author = clean if clean else source.author
 
     formatter = CitationFormatter()
     return formatter.chicago(source)
@@ -178,10 +190,18 @@ async def search_view(
             "chunk_method": r.chunk.chunk_method,
             "youtube_url": r.chunk.youtube_url,
             "youtube_timestamp": r.chunk.youtube_timestamp,
-            "lecturer": r.chunk.lecturer,
+            "lecturer": r.chunk.lecturer if r.chunk.lecturer and not r.chunk.lecturer.startswith("SPEAKER_") else "Wu",
         })
 
 
+
+    # Clean author lists: remove raw SPEAKER_XX labels from display
+    for r in results:
+        if hasattr(r.source, 'author') and isinstance(r.source.author, list):
+            clean = [a for a in r.source.author if not a.startswith('SPEAKER_') and a != 'UNKNOWN']
+            r.source.clean_authors = ', '.join(clean) if clean else ', '.join(r.source.author)
+        else:
+            r.source.clean_authors = ', '.join(r.source.author) if r.source.author else ''
 
     return templates.TemplateResponse(request, "search.html", {
         "stats": None,
@@ -254,7 +274,7 @@ async def api_search(
             "author": r.source.author,
             "structural_ref": r.chunk.structural_ref,
             "pdf_page": r.chunk.pdf_page,
-            "lecturer": r.chunk.lecturer,
+            "lecturer": r.chunk.lecturer if r.chunk.lecturer and not r.chunk.lecturer.startswith("SPEAKER_") else "Wu",
             "citation": _format_citation(r.source),
             "cross_translations": [
                 {
