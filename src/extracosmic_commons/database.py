@@ -88,6 +88,41 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_chunks_lecturer ON chunks(lecturer);
             CREATE INDEX IF NOT EXISTS idx_chunks_pdf_page ON chunks(pdf_page);
             CREATE INDEX IF NOT EXISTS idx_sources_type ON sources(type);
+
+            -- Citations: structured records linking conversation moments
+            -- to passages in primary texts. Extracted by LLM analysis.
+            CREATE TABLE IF NOT EXISTS citations (
+                id TEXT PRIMARY KEY,
+                work_title TEXT NOT NULL,
+                work_author TEXT NOT NULL DEFAULT 'Hegel',
+                citation_type TEXT NOT NULL DEFAULT 'reference',
+                page_german TEXT,
+                page_english TEXT,
+                edition_german TEXT,
+                edition_english TEXT,
+                section_ref TEXT,
+                quoted_text TEXT,
+                speaker TEXT,
+                conversation_date TEXT,
+                audio_timestamp TEXT,
+                audio_timestamp_end TEXT,
+                audio_path TEXT,
+                conversation_source_id TEXT REFERENCES sources(id),
+                conversation_chunk_id TEXT REFERENCES chunks(id),
+                cited_source_id TEXT REFERENCES sources(id),
+                cited_chunk_id TEXT REFERENCES chunks(id),
+                discussion_context TEXT,
+                confidence REAL DEFAULT 0.0,
+                extraction_notes TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_citations_work ON citations(work_title, work_author);
+            CREATE INDEX IF NOT EXISTS idx_citations_conv_source ON citations(conversation_source_id);
+            CREATE INDEX IF NOT EXISTS idx_citations_cited_source ON citations(cited_source_id);
+            CREATE INDEX IF NOT EXISTS idx_citations_cited_chunk ON citations(cited_chunk_id);
+            CREATE INDEX IF NOT EXISTS idx_citations_speaker ON citations(speaker);
+            CREATE INDEX IF NOT EXISTS idx_citations_page_de ON citations(page_german);
+            CREATE INDEX IF NOT EXISTS idx_citations_page_en ON citations(page_english);
         """)
         self.conn.commit()
 
@@ -434,3 +469,151 @@ class Database:
             "chunks_by_language": chunks_by_language,
             "chunks_by_lecturer": chunks_by_lecturer,
         }
+
+    # --- Citations ---
+
+    def insert_citation(self, citation_dict: dict[str, Any]) -> str:
+        """Insert a single citation record.
+
+        Args:
+            citation_dict: Output of CitationRecord.to_dict().
+
+        Returns:
+            The citation ID.
+        """
+        cols = list(citation_dict.keys())
+        placeholders = ", ".join(["?"] * len(cols))
+        col_names = ", ".join(cols)
+        values = [citation_dict[c] for c in cols]
+
+        self.conn.execute(
+            f"INSERT OR REPLACE INTO citations ({col_names}) VALUES ({placeholders})",
+            values,
+        )
+        self.conn.commit()
+        return citation_dict["id"]
+
+    def insert_citations_batch(self, citation_dicts: list[dict[str, Any]]) -> int:
+        """Insert multiple citation records in a single transaction.
+
+        Args:
+            citation_dicts: List of CitationRecord.to_dict() outputs.
+
+        Returns:
+            Number of citations inserted.
+        """
+        if not citation_dicts:
+            return 0
+
+        cols = list(citation_dicts[0].keys())
+        placeholders = ", ".join(["?"] * len(cols))
+        col_names = ", ".join(cols)
+
+        self.conn.executemany(
+            f"INSERT OR REPLACE INTO citations ({col_names}) VALUES ({placeholders})",
+            [[d[c] for c in cols] for d in citation_dicts],
+        )
+        self.conn.commit()
+        return len(citation_dicts)
+
+    def get_citations_by_source(self, source_id: str) -> list[dict[str, Any]]:
+        """Get all citations from a given conversation or lecture source.
+
+        Returns citations where conversation_source_id matches,
+        i.e. "what texts were cited in this conversation?"
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM citations WHERE conversation_source_id = ? ORDER BY audio_timestamp",
+            (source_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_citations_for_text(self, cited_source_id: str) -> list[dict[str, Any]]:
+        """Get all citations pointing to a given source text.
+
+        Returns citations where cited_source_id matches,
+        i.e. "where in the conversations is this text discussed?"
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM citations WHERE cited_source_id = ? ORDER BY conversation_date, audio_timestamp",
+            (cited_source_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_citations_for_chunk(self, chunk_id: str) -> list[dict[str, Any]]:
+        """Get all citations linked to a specific source text chunk.
+
+        Returns citations where cited_chunk_id matches — useful for
+        showing "this Hegel passage is discussed in these conversations"
+        alongside search results.
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM citations WHERE cited_chunk_id = ? ORDER BY conversation_date",
+            (chunk_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_citations_by_page(
+        self, work_title: str, page: str, edition: str = "any"
+    ) -> list[dict[str, Any]]:
+        """Find all citations referencing a specific page number.
+
+        Searches both German and English page fields. Useful for
+        building a page-level commentary index.
+
+        Args:
+            work_title: e.g. "Science of Logic"
+            page: Page number as string, e.g. "110"
+            edition: "german", "english", or "any" (search both)
+        """
+        if edition == "german":
+            rows = self.conn.execute(
+                "SELECT * FROM citations WHERE work_title = ? AND page_german = ?",
+                (work_title, page),
+            ).fetchall()
+        elif edition == "english":
+            rows = self.conn.execute(
+                "SELECT * FROM citations WHERE work_title = ? AND page_english = ?",
+                (work_title, page),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM citations WHERE work_title = ? AND (page_german = ? OR page_english = ?)",
+                (work_title, page, page),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_citation_stats(self) -> dict[str, Any]:
+        """Return citation corpus statistics."""
+        total = self.conn.execute("SELECT COUNT(*) FROM citations").fetchone()[0]
+        by_type = self.conn.execute(
+            "SELECT citation_type, COUNT(*) as cnt FROM citations GROUP BY citation_type"
+        ).fetchall()
+        by_work = self.conn.execute(
+            "SELECT work_title, COUNT(*) as cnt FROM citations GROUP BY work_title ORDER BY cnt DESC"
+        ).fetchall()
+        by_speaker = self.conn.execute(
+            "SELECT speaker, COUNT(*) as cnt FROM citations GROUP BY speaker ORDER BY cnt DESC"
+        ).fetchall()
+        cross_referenced = self.conn.execute(
+            "SELECT COUNT(*) FROM citations WHERE cited_chunk_id IS NOT NULL"
+        ).fetchone()[0]
+        return {
+            "total_citations": total,
+            "by_type": {r["citation_type"]: r["cnt"] for r in by_type},
+            "by_work": {r["work_title"]: r["cnt"] for r in by_work},
+            "by_speaker": {r["speaker"]: r["cnt"] for r in by_speaker},
+            "cross_referenced": cross_referenced,
+        }
+
+    def delete_citations_by_source(self, source_id: str) -> int:
+        """Delete all citations extracted from a given source.
+
+        Used when re-running extraction on a transcript.
+        """
+        cursor = self.conn.execute(
+            "DELETE FROM citations WHERE conversation_source_id = ?",
+            (source_id,),
+        )
+        self.conn.commit()
+        return cursor.rowcount
