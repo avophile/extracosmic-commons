@@ -93,6 +93,9 @@ _PATH_MAP = [
      os.path.expanduser("~/Documents/HegelTranscripts/houlgate/")),
     ("/workspace/corpus/",
      os.path.expanduser("~/Documents/")),
+    # Podcast pipeline audio files on External SSD
+    ("/Volumes/External SSD/podcast-pipeline/",
+     "/Volumes/External SSD/podcast-pipeline/"),
 ]
 
 
@@ -172,6 +175,10 @@ async def search_view(
             "pdf_page": r.chunk.pdf_page,
             "source_path": r.source.source_path,
             "source_title": r.source.title,
+            "chunk_method": r.chunk.chunk_method,
+            "youtube_url": r.chunk.youtube_url,
+            "youtube_timestamp": r.chunk.youtube_timestamp,
+            "lecturer": r.chunk.lecturer,
         })
 
 
