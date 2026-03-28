@@ -1,7 +1,7 @@
 """
 Tests for the drafts.py auto-tagging and Drafts app integration module.
 
-Covers all four tag categories (Project, Status, Content, Claude-authored),
+Covers all four tag categories (Project, Status, Context, Claude-authored),
 URL construction, and the send_to_drafts function (with subprocess mocked).
 """
 
@@ -13,7 +13,7 @@ import pytest
 from extracosmic_commons.drafts import (
     infer_project_tags,
     infer_status_tags,
-    infer_content_tags,
+    infer_context_tags,
     infer_all_tags,
     build_drafts_url,
     send_to_drafts,
@@ -109,39 +109,51 @@ class TestInferStatusTags:
 # Content tag inference
 # -----------------------------------------------------------------------
 
-class TestInferContentTags:
-    """Tests for content-topic tag inference from content keywords."""
+class TestInferContextTags:
+    """Tests for specific, compound context tag inference."""
 
-    def test_citation_content(self):
-        """Citation/edition keywords should tag as Citation."""
-        assert "Citation" in infer_content_tags("Found page ref to di Giovanni p. 478")
+    def test_citation_extractor_compound(self):
+        """'citation extractor' should produce the compound context tag."""
+        assert "citation extractor" in infer_context_tags("Refactored the citation extractor")
 
-    def test_transcript_content(self):
-        """Transcript/speaker/audio keywords should tag as Transcript."""
-        assert "Transcript" in infer_content_tags("Re-diarized speaker labels in audio files")
+    def test_groq_llm_cleanup_compound(self):
+        """'Groq LLM cleanup' should produce the compound context tag."""
+        assert "Groq LLM cleanup" in infer_context_tags("Processed through Groq LLM cleanup")
 
-    def test_hegel_content(self):
-        """Hegel/phenomenology keywords should tag as Hegel."""
-        assert "Hegel" in infer_content_tags("Discussing the Science of Logic")
+    def test_cuda_oom_compound(self):
+        """'CUDA OOM' and 'CUDA out-of-memory' should produce the compound tag."""
+        assert "CUDA OOM" in infer_context_tags("Hit a CUDA OOM error")
+        assert "CUDA OOM" in infer_context_tags("CUDA out-of-memory on file 25")
 
-    def test_testing_content(self):
-        """Test/pytest keywords should tag as Testing."""
-        assert "Testing" in infer_content_tags("All 32 pytest tests passing")
+    def test_specific_model_names(self):
+        """Specific model names should be extracted as tags."""
+        assert "llama-3.1-8b-instant" in infer_context_tags("Using llama-3.1-8b-instant")
+        assert "llama-3.3-70b-versatile" in infer_context_tags("Switched from llama-3.3-70b-versatile")
 
-    def test_conversation_content(self):
-        """Conversation/wu/douglas keywords should tag as Conversation."""
-        assert "Conversation" in infer_content_tags("Douglas and Wu discuss dialectic")
+    def test_specific_tools(self):
+        """Specific tools like whisperx, diarization, FAISS should tag."""
+        assert "whisperx" in infer_context_tags("whisperx transcription complete")
+        assert "diarization" in infer_context_tags("Re-diarization of all 37 files")
+        assert "FAISS" in infer_context_tags("Rebuilt the FAISS index")
 
-    def test_multiple_content_tags(self):
-        """A single text can match multiple content tags."""
-        tags = infer_content_tags("Citation extraction from Hegel transcripts")
-        assert "Citation" in tags
-        assert "Hegel" in tags
-        assert "Transcript" in tags
+    def test_testing_tag(self):
+        """Test/pytest keywords should still tag as Testing."""
+        assert "Testing" in infer_context_tags("All 32 pytest tests passing")
+
+    def test_git_tag(self):
+        """Git keywords should tag as Git."""
+        assert "Git" in infer_context_tags("Committed and pushed to main")
+
+    def test_multiple_context_tags(self):
+        """A single text can match multiple specific context tags."""
+        tags = infer_context_tags("whisperx diarization on RunPod with CUDA OOM")
+        assert "whisperx" in tags
+        assert "diarization" in tags
+        assert "CUDA OOM" in tags
 
     def test_no_match(self):
-        """Text with no content keywords should return empty list."""
-        assert infer_content_tags("The weather is nice") == []
+        """Text with no context keywords should return empty list."""
+        assert infer_context_tags("The weather is nice") == []
 
 
 # -----------------------------------------------------------------------
@@ -163,28 +175,26 @@ class TestInferAllTags:
 
     def test_all_categories_combined(self):
         """A rich text should produce tags from all three inferred categories + Claude-authored."""
-        text = "Pipeline completed successfully: 841 citations from Hegel transcripts"
+        text = "Pipeline completed successfully: Groq LLM cleanup using llama-3.1-8b-instant"
         tags = infer_all_tags(text)
         # Project tags
         assert "Pipeline" in tags
-        assert "Citations" in tags
+        assert "Groq" in tags
         # Status tags
         assert "Success" in tags
-        # Content tags
-        assert "Citation" in tags
-        assert "Hegel" in tags
-        assert "Transcript" in tags
+        # Context tags
+        assert "Groq LLM cleanup" in tags
+        assert "llama-3.1-8b-instant" in tags
         # Always present
         assert "Claude-authored" in tags
         assert tags[-1] == "Claude-authored"
 
     def test_deduplication(self):
-        """Tags that appear in multiple categories should only appear once."""
-        # "Error" can match both STATUS_TAG_RULES and CONTENT_TAG_RULES
-        text = "Traceback error in debug session"
+        """Tags should not appear more than once even if matched by multiple rules."""
+        text = "Testing the pytest suite passed"
         tags = infer_all_tags(text)
-        error_count = tags.count("Error")
-        assert error_count == 1, f"'Error' appeared {error_count} times, expected 1"
+        testing_count = tags.count("Testing")
+        assert testing_count == 1, f"'Testing' appeared {testing_count} times, expected 1"
 
 
 # -----------------------------------------------------------------------

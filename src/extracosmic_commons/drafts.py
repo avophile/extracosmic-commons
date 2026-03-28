@@ -34,7 +34,7 @@ from typing import Optional
 PROJECT_TAG_RULES = [
     (re.compile(r"extracosmic|faiss|bge-m3|search ui|web viewer", re.I), "Extracosmic Commons"),
     (re.compile(r"pipeline|overnight|stage \d|ingestion|re-ingest", re.I), "Pipeline"),
-    (re.compile(r"groq|llama|llm cleanup|free.?tier", re.I), "Groq"),
+    (re.compile(r"groq|llm cleanup|free.?tier", re.I), "Groq"),
     (re.compile(r"runpod|gpu|whisperx|diariz", re.I), "RunPod"),
     (re.compile(r"citation|cross.?reference", re.I), "Citations"),
 ]
@@ -49,21 +49,31 @@ STATUS_TAG_RULES = [
     (re.compile(r"cost|invoice|billing|\$\d", re.I), "Cost"),
 ]
 
-# CONTENT_TAG_RULES: keyword patterns → content-topic tag.
-# These describe what the draft is about topically.
-CONTENT_TAG_RULES = [
-    (re.compile(r"citation|page ref|edition|di giovanni|miller", re.I), "Citation"),
-    (re.compile(r"transcript|diariz|speaker|whisperx|audio", re.I), "Transcript"),
-    (re.compile(r"pipeline|overnight|batch", re.I), "Pipeline"),
-    (re.compile(r"groq|llama|llm|model", re.I), "Groq"),
-    (re.compile(r"search|query|result|faiss|bm25", re.I), "Search"),
-    (re.compile(r"ingest|chunk|embed|index", re.I), "Ingestion"),
-    (re.compile(r"runpod|gpu|cuda|vram", re.I), "RunPod"),
-    (re.compile(r"hegel|phenomenology|science of logic|dialectic", re.I), "Hegel"),
+# CONTEXT_TAG_RULES: specific, compound concepts extracted from content.
+# These are precise, descriptive tags — the kind you'd actually search for.
+# Ordered from most specific to least; multiple can match.
+CONTEXT_TAG_RULES = [
+    # Compound tool/concept tags (most specific first)
+    (re.compile(r"citation extractor", re.I), "citation extractor"),
+    (re.compile(r"groq llm cleanup|llm cleanup.*groq|groq.*cleanup", re.I), "Groq LLM cleanup"),
+    (re.compile(r"cuda oom|cuda out.of.memory|gpu oom", re.I), "CUDA OOM"),
+    (re.compile(r"search ui|web viewer|search interface", re.I), "search UI"),
+    (re.compile(r"overnight pipeline", re.I), "overnight pipeline"),
+    (re.compile(r"speaker.turn chunk", re.I), "speaker-turn chunking"),
+    # Specific model names
+    (re.compile(r"llama-3\.1-8b-instant", re.I), "llama-3.1-8b-instant"),
+    (re.compile(r"llama-3\.3-70b-versatile", re.I), "llama-3.3-70b-versatile"),
+    (re.compile(r"llama-4-scout", re.I), "llama-4-scout"),
+    # Specific tools/technologies
+    (re.compile(r"whisperx", re.I), "whisperx"),
+    (re.compile(r"diariz(?:ation|ed|ing)", re.I), "diarization"),
+    (re.compile(r"pyannote", re.I), "pyannote"),
+    (re.compile(r"faiss", re.I), "FAISS"),
+    (re.compile(r"bge-m3", re.I), "BGE-M3"),
+    (re.compile(r"bm25", re.I), "BM25"),
+    # Broader topic tags (only when no more specific tag covers it)
     (re.compile(r"test|pytest|assert|tdd", re.I), "Testing"),
     (re.compile(r"git|commit|push|branch|merge", re.I), "Git"),
-    (re.compile(r"(?<!zero )(?<!no )error|bug|fix|debug|traceback", re.I), "Error"),
-    (re.compile(r"conversation|wu|douglas|jimmy|tony", re.I), "Conversation"),
 ]
 
 
@@ -106,20 +116,21 @@ def infer_status_tags(text: str) -> list[str]:
     return list(dict.fromkeys(tags))
 
 
-def infer_content_tags(text: str) -> list[str]:
-    """Scan text against CONTENT_TAG_RULES and return matching content-topic tags.
+def infer_context_tags(text: str) -> list[str]:
+    """Scan text against CONTEXT_TAG_RULES and return matching context tags.
 
-    Content tags describe what the draft is about topically — citations,
-    transcripts, Hegel, testing, etc. Multiple can match.
+    Context tags are specific, compound concepts extracted from the content —
+    things like "citation extractor", "CUDA OOM", "llama-3.1-8b-instant".
+    These are the precise, descriptive tags you'd actually search for.
 
     Args:
         text: The draft content to scan.
 
     Returns:
-        A deduplicated list of content tag strings.
+        A deduplicated list of context tag strings.
     """
     tags = []
-    for pattern, tag in CONTENT_TAG_RULES:
+    for pattern, tag in CONTEXT_TAG_RULES:
         if pattern.search(text):
             tags.append(tag)
     return list(dict.fromkeys(tags))
@@ -141,7 +152,7 @@ def infer_all_tags(text: str) -> list[str]:
     tags = []
     tags.extend(infer_project_tags(text))
     tags.extend(infer_status_tags(text))
-    tags.extend(infer_content_tags(text))
+    tags.extend(infer_context_tags(text))
     # Deduplicate (some rules overlap, e.g., "Error" in both status and content)
     tags = list(dict.fromkeys(tags))
     # Always add Claude-authored as the final tag
