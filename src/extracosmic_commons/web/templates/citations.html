@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citation Browser — Extracosmic Commons</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --bg-card: #16213e;
+            --bg-input: #0f3460;
+            --bg-hover: #1a2a4e;
+            --text: #e0e0e0;
+            --text-muted: #8a8a9a;
+            --accent: #e94560;
+            --accent2: #533483;
+            --border: #2a2a4a;
+            --link: #7ec8e3;
+            --success: #4ade80;
+            --reading: rgba(233, 69, 96, 0.25);
+            --reference: rgba(126, 200, 227, 0.25);
+            --paraphrase: rgba(74, 222, 128, 0.25);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: var(--accent); }
+        .subtitle { color: var(--text-muted); margin-bottom: 1.5rem; font-style: italic; }
+        a { color: var(--link); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .back-link { margin-bottom: 1.5rem; display: inline-block; font-size: 0.9rem; }
+
+        /* Filters */
+        .filters {
+            display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap;
+            align-items: center;
+        }
+        .filters select, .filters button {
+            padding: 0.5rem 0.75rem; background: var(--bg-input); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            font-size: 0.9rem; font-family: inherit; cursor: pointer;
+        }
+        .filters button { background: var(--accent); border-color: var(--accent); }
+        .filters button:hover { opacity: 0.9; }
+        .filters .clear-btn { background: var(--bg-card); }
+
+        /* Citation cards */
+        .citation-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem;
+        }
+        .citation-card-header {
+            display: flex; justify-content: space-between; align-items: baseline;
+            margin-bottom: 0.4rem;
+        }
+        .citation-work { font-weight: bold; color: var(--link); font-size: 1rem; }
+        .citation-conf { color: var(--text-muted); font-size: 0.8rem; }
+        .citation-meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem; }
+        .citation-meta span { margin-right: 1rem; }
+        .citation-context {
+            font-size: 0.9rem; line-height: 1.6; color: var(--text);
+            border-left: 3px solid var(--accent2); padding-left: 0.75rem;
+        }
+
+        /* Type badges */
+        .type-badge {
+            display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px;
+            font-size: 0.75rem; font-weight: bold; text-transform: uppercase;
+        }
+        .type-badge.reading { background: var(--reading); color: #ff7b93; }
+        .type-badge.reference { background: var(--reference); color: #7ec8e3; }
+        .type-badge.paraphrase { background: var(--paraphrase); color: #4ade80; }
+
+        /* Speaker badges */
+        .speaker-badge {
+            display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px;
+            font-size: 0.8rem; font-weight: bold;
+        }
+        .speaker-badge.wu { background: rgba(233, 69, 96, 0.25); color: #ff7b93; }
+        .speaker-badge.douglas { background: rgba(126, 200, 227, 0.25); color: #7ec8e3; }
+        .speaker-badge.other { background: rgba(138, 138, 154, 0.25); color: #8a8a9a; }
+
+        .page-ref { color: var(--accent); font-weight: bold; }
+        .result-count { color: var(--text-muted); margin-top: 1rem; font-style: italic; }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">← Back to search</a>
+    <h1>Citation Browser</h1>
+    <p class="subtitle">{{ total }} citations extracted from Wu conversations</p>
+
+    <!-- Filter controls -->
+    <form class="filters" action="/citations" method="get">
+        <select name="work">
+            <option value="">All works</option>
+            {% for w in works %}
+            <option value="{{ w }}" {% if active_work == w %}selected{% endif %}>{{ w }}</option>
+            {% endfor %}
+        </select>
+        <select name="speaker">
+            <option value="">All speakers</option>
+            {% for s in speakers %}
+            <option value="{{ s }}" {% if active_speaker == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <select name="type">
+            <option value="">All types</option>
+            {% for t in types %}
+            <option value="{{ t }}" {% if active_type == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Filter</button>
+        <a href="/citations" class="clear-btn" style="padding:0.5rem 0.75rem; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-size:0.9rem;">Clear</a>
+    </form>
+
+    <!-- Citation list -->
+    {% for c in citations %}
+    <div class="citation-card">
+        <div class="citation-card-header">
+            <span class="citation-work">{{ c.work_title }}</span>
+            <span class="citation-conf">{{ "%.0f"|format((c.confidence or 0) * 100) }}% confidence</span>
+        </div>
+        <div class="citation-meta">
+            <span class="type-badge {{ c.citation_type }}">{{ c.citation_type }}</span>
+            {% if c.speaker %}
+            <span class="speaker-badge {% if c.speaker == 'Wu' %}wu{% elif c.speaker == 'Douglas' %}douglas{% else %}other{% endif %}">{{ c.speaker }}</span>
+            {% endif %}
+            {% if c.page_english %}<span class="page-ref">p. {{ c.page_english }} (EN)</span>{% endif %}
+            {% if c.page_german %}<span class="page-ref">p. {{ c.page_german }} (DE)</span>{% endif %}
+            {% if c.edition_english %}<span>{{ c.edition_english }}</span>{% endif %}
+            {% if c.conversation_date %}<span>{{ c.conversation_date }}</span>{% endif %}
+            {% if c.audio_timestamp %}<span>🕐 {{ c.audio_timestamp }}</span>{% endif %}
+        </div>
+        {% if c.discussion_context %}
+        <div class="citation-context">{{ c.discussion_context }}</div>
+        {% endif %}
+        {% if c.quoted_text %}
+        <div class="citation-context" style="margin-top: 0.5rem; font-style: italic; border-color: var(--accent);">
+            "{{ c.quoted_text[:300] }}{% if c.quoted_text|length > 300 %}...{% endif %}"
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if citations|length == 0 %}
+    <p class="result-count">No citations match the current filters.</p>
+    {% else %}
+    <p class="result-count">Showing {{ citations|length }} of {{ total }} citations</p>
+    {% endif %}
+</body>
+</html>

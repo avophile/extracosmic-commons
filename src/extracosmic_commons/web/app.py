@@ -195,6 +195,30 @@ async def search_view(
 
 
 
+    # Attach citation data to each result for inline display.
+    # For each conversation chunk, look up any citations it contains.
+    chunk_citations = {}
+    for r in results:
+        if r.chunk.chunk_method == "speaker_turn":
+            cites = db.conn.execute(
+                "SELECT work_title, citation_type, page_english, page_german, "
+                "speaker, confidence FROM citations WHERE conversation_chunk_id = ?",
+                (r.chunk.id,),
+            ).fetchall()
+            if cites:
+                chunk_citations[r.chunk.id] = [dict(c) for c in cites]
+        # Also check reverse: if this is a primary text chunk, who cites it?
+        elif r.chunk.chunk_method in ("paragraph", "bilingual_aligned"):
+            rev = db.conn.execute(
+                "SELECT speaker, conversation_date, work_title "
+                "FROM citations WHERE cited_chunk_id = ? LIMIT 5",
+                (r.chunk.id,),
+            ).fetchall()
+            if rev:
+                chunk_citations[r.chunk.id] = [
+                    {**dict(c), "_reverse": True} for c in rev
+                ]
+
     # Clean author lists: remove raw SPEAKER_XX labels from display
     for r in results:
         if hasattr(r.source, 'author') and isinstance(r.source.author, list):
@@ -211,6 +235,7 @@ async def search_view(
         "bilingual": bilingual,
         "result_data_json": json.dumps(result_data),
         "citations": citations,
+        "chunk_citations": chunk_citations,
     })
 
 
@@ -339,6 +364,173 @@ async def api_open_video(path: str = Query(...), timestamp: str = Query("00:00:0
     subprocess.Popen(["osascript", "-e", script])
     return {"ok": True, "path": str(filepath), "timestamp": timestamp, "seconds": seconds}
 
+
+
+# ===========================================================================
+# Citation Integration (Phase 2)
+# ===========================================================================
+
+
+@app.get("/api/citations/chunk/{chunk_id}")
+async def api_citations_for_chunk(chunk_id: str):
+    """Get citations extracted from a specific conversation chunk.
+
+    Returns all citation records where conversation_chunk_id matches,
+    i.e. "what texts are cited in this chunk of conversation?"
+    Used to show inline citation badges on search results.
+    """
+    db, _ = _get_components()
+    rows = db.conn.execute(
+        "SELECT * FROM citations WHERE conversation_chunk_id = ? ORDER BY confidence DESC",
+        (chunk_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/citations/reverse/{chunk_id}")
+async def api_reverse_citations(chunk_id: str):
+    """Reverse citation lookup: which conversations cite this text chunk?
+
+    Returns all citation records where cited_chunk_id matches,
+    i.e. "where in the Wu conversations is this Hegel passage discussed?"
+    Used to show a 'Discussed in...' section on primary text results.
+    """
+    db, _ = _get_components()
+    return db.get_citations_for_chunk(chunk_id)
+
+
+@app.get("/api/citations")
+async def api_citations_browse(
+    work: str | None = Query(None, description="Filter by work title"),
+    speaker: str | None = Query(None, description="Filter by speaker"),
+    type: str | None = Query(None, description="Filter by citation type (reading/reference/paraphrase)"),
+    page: str | None = Query(None, description="Filter by page number"),
+    limit: int = Query(100, description="Max results"),
+    offset: int = Query(0, description="Pagination offset"),
+):
+    """Browse all citations with optional filters and facets.
+
+    Returns a paginated list of citations plus facet counts for building
+    filter dropdowns in the citation browser UI.
+    """
+    db, _ = _get_components()
+
+    # Build dynamic WHERE clause from filters
+    conditions = []
+    params: list = []
+
+    if work:
+        conditions.append("work_title = ?")
+        params.append(work)
+    if speaker:
+        conditions.append("speaker = ?")
+        params.append(speaker)
+    if type:
+        conditions.append("citation_type = ?")
+        params.append(type)
+    if page:
+        conditions.append("(page_german = ? OR page_english = ?)")
+        params.extend([page, page])
+
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+    # Get total count for pagination
+    total = db.conn.execute(
+        f"SELECT COUNT(*) FROM citations{where}", params
+    ).fetchone()[0]
+
+    # Get the filtered, paginated citations
+    rows = db.conn.execute(
+        f"SELECT * FROM citations{where} ORDER BY conversation_date, audio_timestamp LIMIT ? OFFSET ?",
+        params + [limit, offset],
+    ).fetchall()
+
+    # Build facets (counts for filter dropdowns — always computed on full corpus)
+    works = db.conn.execute(
+        "SELECT work_title, COUNT(*) as cnt FROM citations GROUP BY work_title ORDER BY cnt DESC"
+    ).fetchall()
+    speakers = db.conn.execute(
+        "SELECT speaker, COUNT(*) as cnt FROM citations GROUP BY speaker ORDER BY cnt DESC"
+    ).fetchall()
+    types = db.conn.execute(
+        "SELECT citation_type, COUNT(*) as cnt FROM citations GROUP BY citation_type ORDER BY cnt DESC"
+    ).fetchall()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "citations": [dict(r) for r in rows],
+        "facets": {
+            "works": {r["work_title"]: r["cnt"] for r in works},
+            "speakers": {r["speaker"]: r["cnt"] for r in speakers},
+            "types": {r["citation_type"]: r["cnt"] for r in types},
+        },
+    }
+
+
+@app.get("/api/citation-stats")
+async def api_citation_stats():
+    """Citation corpus statistics — counts by type, work, and speaker."""
+    db, _ = _get_components()
+    return db.get_citation_stats()
+
+
+@app.get("/citations", response_class=HTMLResponse)
+async def citations_page(
+    request: Request,
+    work: str | None = Query(None),
+    speaker: str | None = Query(None),
+    type: str | None = Query(None),
+):
+    """Citation browser page — HTML view of all citations with filters."""
+    db, _ = _get_components()
+
+    # Reuse the API logic for filtered results
+    conditions = []
+    params: list = []
+    if work:
+        conditions.append("work_title = ?")
+        params.append(work)
+    if speaker:
+        conditions.append("speaker = ?")
+        params.append(speaker)
+    if type:
+        conditions.append("citation_type = ?")
+        params.append(type)
+
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    total = db.conn.execute(
+        f"SELECT COUNT(*) FROM citations{where}", params
+    ).fetchone()[0]
+
+    rows = db.conn.execute(
+        f"SELECT * FROM citations{where} ORDER BY work_title, page_english, conversation_date LIMIT 200",
+        params,
+    ).fetchall()
+    citations = [dict(r) for r in rows]
+
+    # Facets for filter dropdowns
+    works = db.conn.execute(
+        "SELECT DISTINCT work_title FROM citations ORDER BY work_title"
+    ).fetchall()
+    speakers = db.conn.execute(
+        "SELECT DISTINCT speaker FROM citations ORDER BY speaker"
+    ).fetchall()
+    types = db.conn.execute(
+        "SELECT DISTINCT citation_type FROM citations ORDER BY citation_type"
+    ).fetchall()
+
+    return templates.TemplateResponse(request, "citations.html", {
+        "citations": citations,
+        "total": total,
+        "works": [r["work_title"] for r in works],
+        "speakers": [r["speaker"] for r in speakers],
+        "types": [r["citation_type"] for r in types],
+        "active_work": work or "",
+        "active_speaker": speaker or "",
+        "active_type": type or "",
+    })
 
 @app.get("/api/stats")
 async def api_stats():

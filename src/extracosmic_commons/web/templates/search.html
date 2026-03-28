@@ -148,6 +148,36 @@
         .speaker-badge.tony { background: rgba(74, 222, 128, 0.25); color: #4ade80; }
         .speaker-badge.other { background: rgba(138, 138, 154, 0.25); color: #8a8a9a; }
         .conversation-date { color: var(--accent); font-size: 0.85rem; }
+
+        /* Inline citation badges on search results */
+        .chunk-citations {
+            margin-top: 0.5rem; padding: 0.5rem 0.75rem;
+            background: rgba(83, 52, 131, 0.12); border-radius: 6px;
+            font-size: 0.85rem;
+        }
+        .chunk-citations .cite-label {
+            color: var(--accent); font-weight: bold; font-size: 0.8rem;
+            text-transform: uppercase; margin-bottom: 0.3rem;
+        }
+        .chunk-citations .cite-item {
+            color: var(--text-muted); margin-bottom: 0.2rem;
+        }
+        .chunk-citations .cite-item .work { color: var(--link); }
+        .chunk-citations .cite-item .page-ref { color: var(--accent); font-weight: bold; }
+        .cite-type-badge {
+            display: inline-block; padding: 0.05rem 0.4rem; border-radius: 3px;
+            font-size: 0.7rem; font-weight: bold; text-transform: uppercase;
+            margin-right: 0.3rem;
+        }
+        .cite-type-badge.reading { background: rgba(233, 69, 96, 0.25); color: #ff7b93; }
+        .cite-type-badge.reference { background: rgba(126, 200, 227, 0.25); color: #7ec8e3; }
+        .cite-type-badge.paraphrase { background: rgba(74, 222, 128, 0.25); color: #4ade80; }
+        .reverse-cite { border-left: 3px solid var(--accent); }
+        .nav-links { margin-bottom: 1rem; }
+        .nav-links a {
+            color: var(--link); margin-right: 1.5rem; font-size: 0.9rem;
+        }
+
         a { color: var(--link); text-decoration: none; }
         a:hover { text-decoration: underline; }
     </style>
@@ -155,6 +185,10 @@
 <body>
     <h1>Extracosmic Commons</h1>
     <p class="subtitle">Privacy-first scholarly research platform</p>
+    <div class="nav-links">
+        <a href="/">Search</a>
+        <a href="/citations">Citation Browser</a>
+    </div>
 
     {% if stats %}
     <div class="stats">
@@ -206,6 +240,30 @@
                     {% endif %}
                 </div>
                 <div class="result-text" id="text-{{ loop.index }}">{{ r.chunk.text[:500] }}{% if r.chunk.text|length > 500 %}...{% endif %}</div>
+
+                {% if chunk_citations is defined and r.chunk.id in chunk_citations %}
+                <div class="chunk-citations {% if chunk_citations[r.chunk.id][0].get('_reverse') %}reverse-cite{% endif %}">
+                    {% if chunk_citations[r.chunk.id][0].get('_reverse') %}
+                    <div class="cite-label">📚 Discussed in conversations:</div>
+                    {% for cc in chunk_citations[r.chunk.id] %}
+                    <div class="cite-item">
+                        <span class="speaker-badge {% if cc.speaker == 'Wu' %}wu{% elif cc.speaker == 'Douglas' %}douglas{% else %}other{% endif %}">{{ cc.speaker }}</span>
+                        {{ cc.conversation_date or '' }}
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="cite-label">📖 Cites primary text:</div>
+                    {% for cc in chunk_citations[r.chunk.id] %}
+                    <div class="cite-item">
+                        <span class="cite-type-badge {{ cc.citation_type }}">{{ cc.citation_type }}</span>
+                        <span class="work">{{ cc.work_title }}</span>
+                        {% if cc.page_english %}<span class="page-ref">p. {{ cc.page_english }}</span>{% endif %}
+                        {% if cc.page_german %}<span class="page-ref">p. {{ cc.page_german }} (DE)</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+                {% endif %}
 
                 <div class="result-actions"
                      data-source-path="{{ r.source.source_path or '' }}"
