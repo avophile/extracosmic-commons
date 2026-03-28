@@ -282,7 +282,7 @@ class TestCollectionTiers:
 
     def test_all_known_collections_have_tiers(self):
         """Every expected collection name maps to a tier."""
-        expected = {"hegel_collection", "hegel_texts", "workbench", "zotero", "zotero_rag"}
+        expected = {"hegel_collection", "hegel_texts", "workbench", "zotero", "zotero_rag", "pdf_import"}
         assert expected.issubset(set(COLLECTION_TIERS.keys()))
 
     def test_tiers_are_1_2_or_3(self):

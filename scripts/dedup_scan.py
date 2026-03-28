@@ -55,6 +55,7 @@ COLLECTION_TIERS: dict[str, int] = {
     "workbench": 2,
     "zotero": 3,
     "zotero_rag": 3,
+    "pdf_import": 2,
 }
 
 
