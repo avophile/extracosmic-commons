@@ -76,6 +76,11 @@ class TestInferStatusTags:
         assert "Success" in infer_status_tags("Pipeline completed successfully")
         assert "Success" in infer_status_tags("All 37 files done with zero errors")
 
+    def test_zero_errors_not_tagged_error(self):
+        """'zero errors' should NOT trigger the Error tag — it's a success."""
+        assert "Error" not in infer_status_tags("Finished with zero errors")
+        assert "Error" not in infer_status_tags("no error found")
+
     def test_error_keywords(self):
         """Error/fail/exception should tag as Error."""
         assert "Error" in infer_status_tags("CUDA OOM error on file 25")

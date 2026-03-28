@@ -42,8 +42,8 @@ PROJECT_TAG_RULES = [
 # STATUS_TAG_RULES: keyword patterns → status tag.
 # These indicate the nature of the update (success, failure, progress, etc.).
 STATUS_TAG_RULES = [
-    (re.compile(r"success|complete[d]?|finished|done|passed|zero errors", re.I), "Success"),
-    (re.compile(r"error|fail|exception|traceback|crash", re.I), "Error"),
+    (re.compile(r"success|completed|finished|done|pass(?:ed|ing)?|zero errors", re.I), "Success"),
+    (re.compile(r"(?<!zero )(?<!no )error|fail|exception|traceback|crash", re.I), "Error"),
     (re.compile(r"progress|running|processing|stage \d of", re.I), "Progress"),
     (re.compile(r"warning|caution|attention|unexpected", re.I), "Warning"),
     (re.compile(r"cost|invoice|billing|\$\d", re.I), "Cost"),
@@ -62,7 +62,7 @@ CONTENT_TAG_RULES = [
     (re.compile(r"hegel|phenomenology|science of logic|dialectic", re.I), "Hegel"),
     (re.compile(r"test|pytest|assert|tdd", re.I), "Testing"),
     (re.compile(r"git|commit|push|branch|merge", re.I), "Git"),
-    (re.compile(r"error|bug|fix|debug|traceback", re.I), "Error"),
+    (re.compile(r"(?<!zero )(?<!no )error|bug|fix|debug|traceback", re.I), "Error"),
     (re.compile(r"conversation|wu|douglas|jimmy|tony", re.I), "Conversation"),
 ]
 
